@@ -8,7 +8,7 @@
   --color-soft: #f7f8f2;
   --color-sage: #edf1e5;
   --color-error: #a43d34;
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: 'Inter Variable', Inter, sans-serif;
   --font-serif: Georgia, serif;
   --breakpoint-sm: 37.5rem;
   --breakpoint-md: 53.125rem;

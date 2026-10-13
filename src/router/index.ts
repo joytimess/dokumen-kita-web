@@ -29,8 +29,18 @@ const router = createRouter({
       meta: { title: 'Halaman tidak ditemukan' },
     },
   ],
-  scrollBehavior(to, _from, saved) {
-    return saved || (to.hash ? { el: to.hash, top: 100 } : { top: 0 })
+  scrollBehavior(to, from, saved) {
+    // Router scroll runs after the new DOM mounts. Reset between pages while it is
+    // still transparent; reserve smooth scrolling for anchors within the same page.
+    const behavior =
+      to.path !== from.path || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'instant'
+        : 'smooth'
+    return saved
+      ? { ...saved, behavior }
+      : to.hash
+        ? { el: to.hash, top: 100, behavior }
+        : { top: 0, behavior }
   },
 })
 router.afterEach((to) => {
