@@ -1,11 +1,12 @@
-<script setup lang="ts"></script>
-
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import { useAuthStore } from './stores/auth'
+onMounted(() => {
+  void useAuthStore().restore()
+})
+</script>
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <a class="fixed -top-24 left-4 z-100 bg-white p-3 text-primary focus:top-3" href="#main"
+    >Lewati ke konten</a
+  ><RouterView />
 </template>
-
-<style scoped></style>

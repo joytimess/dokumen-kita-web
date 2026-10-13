@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #173d35;
+  --color-primary: #21634c;
+  --color-muted: #6c7974;
+  --color-line: #dfe6df;
+  --color-soft: #f7f8f2;
+  --color-sage: #edf1e5;
+  --color-error: #a43d34;
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-serif: Georgia, serif;
+  --breakpoint-sm: 37.5rem;
+  --breakpoint-md: 53.125rem;
+  --breakpoint-lg: 62.5rem;
+}
