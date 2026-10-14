@@ -3,5 +3,5 @@ import AuthLayout from '../../layouts/AuthLayout.vue'
 import AuthForm from '../../components/auth/AuthForm.vue'
 </script>
 <template>
-  <AuthLayout><AuthForm kind="register" /></AuthLayout>
+  <AuthLayout compact><AuthForm kind="register" /></AuthLayout>
 </template>

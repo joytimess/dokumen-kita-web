@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import BrandLogo from '../components/brand/BrandLogo.vue'
+defineProps<{ compact?: boolean }>()
 </script>
 <template>
   <div class="min-h-dvh sm:grid sm:grid-cols-[46%_54%]">
     <aside
+      :class="compact ? 'sm:py-5! sm:[&>div]:py-6! sm:[&_h2]:mb-5! sm:[&_h2]:text-[clamp(36px,4vw,56px)]!' : undefined"
       class="relative hidden flex-col justify-between bg-sage px-[9%] py-[38px] sm:flex lg:px-[10%] lg:py-12 [&>small]:text-[10px] [&>small]:text-muted"
     >
       <BrandLogo />
@@ -35,6 +37,7 @@ import BrandLogo from '../components/brand/BrandLogo.vue'
       <small>© {{ new Date().getFullYear() }} Dokumen Kita.</small>
     </aside>
     <section
+      :class="compact ? 'sm:py-3!' : undefined"
       class="flex min-h-dvh min-w-0 flex-col px-6 py-[27px] max-[360px]:px-[18px] sm:px-[7%] sm:py-[30px] md:px-[9%] md:py-8 lg:px-[12%] lg:py-11"
     >
       <div class="mb-[18px] block sm:hidden"><BrandLogo /></div>
@@ -45,6 +48,7 @@ import BrandLogo from '../components/brand/BrandLogo.vue'
       >
       <main
         id="main"
+        :class="compact ? 'sm:py-2! sm:[&_h1]:mb-2! sm:[&_h1]:text-[28px]! sm:[&>p:first-child]:mb-2!' : undefined"
         class="m-auto w-full max-w-[390px] py-[30px] sm:py-[46px] [&_h1]:mb-3.5 [&_h1]:text-[30px] sm:[&_h1]:text-[28px] lg:[&_h1]:text-[32px] [&_h1]:leading-[1.2] [&>p:first-child]:mb-[18px] [&>p:first-child]:text-[9px]"
         tabindex="-1"
       >

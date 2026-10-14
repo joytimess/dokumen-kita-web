@@ -141,9 +141,10 @@ function google() {
     SELAMAT DATANG DI DOKUMEN KITA
   </p>
   <h1>{{ copy.title }}</h1>
-  <p class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm">{{ copy.description }}</p>
+  <p class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm" :class="kind === 'register' ? 'sm:mb-3! sm:leading-relaxed!' : undefined">{{ copy.description }}</p>
   <p
     v-if="authMode === 'prototype'"
+    :class="kind === 'register' ? 'sm:mb-3! sm:py-2!' : undefined"
     class="mb-[22px] rounded-md border border-line bg-soft px-3 py-2.5 text-[10px] text-muted"
   >
     Mode prototype · autentikasi dan email belum dihubungkan.
@@ -170,7 +171,7 @@ function google() {
     >
   </template>
   <template v-else>
-    <form ref="form" novalidate :aria-busy="busy" @submit.prevent="submit">
+    <form ref="form" novalidate :aria-busy="busy" :class="kind === 'register' ? 'sm:[&>div]:mb-2.5! sm:[&_label]:mb-1! sm:[&_input]:min-h-11! sm:[&_input]:py-2!' : undefined" @submit.prevent="submit">
       <FormField
         v-if="kind === 'register'"
         id="name"
@@ -256,7 +257,7 @@ function google() {
     </p>
     <p
       v-else-if="kind === 'register'"
-      class="mt-[23px] text-center text-xs text-muted [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
+      class="mt-[23px] text-center text-xs text-muted sm:mt-2! [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
     >
       Sudah punya akun? <RouterLink to="/login">Masuk</RouterLink>
     </p>
