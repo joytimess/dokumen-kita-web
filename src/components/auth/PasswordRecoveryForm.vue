@@ -46,7 +46,7 @@ onUnmounted(recovery.dispose)
 </script>
 <template>
   <p class="mb-6 text-[11px] font-bold tracking-[0.16em] text-primary">PULIHKAN AKSES ANDA</p>
-  <ol v-if="stage !== 'success'" aria-label="Tahap pemulihan" class="mb-6 grid grid-cols-3 gap-2 text-[11px] text-muted">
+  <ol v-if="stage !== 'success'" aria-label="Tahap pemulihan" class="hidden">
     <li v-for="(label, index) in ['Email', 'Kode OTP', 'Password baru']" :key="label" :aria-current="index === step ? 'step' : undefined" class="border-b-2 pb-2" :class="index === step ? 'border-primary font-bold text-primary' : 'border-line'">
       <span>{{ index + 1 }}. {{ label }}</span><span v-if="index === step" class="sr-only"> — tahap aktif</span>
     </li>
