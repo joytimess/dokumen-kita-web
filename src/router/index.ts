@@ -19,6 +19,17 @@ const router = createRouter({
       meta: { title: 'Buat akun' },
     },
     {
+      path: '/email/verify',
+      component: () => import('../views/auth/EmailVerificationView.vue'),
+      meta: { title: 'Verifikasi email' },
+    },
+    {
+      path: '/email/verified',
+      component: () => import('../views/auth/EmailVerificationView.vue'),
+      props: { result: true },
+      meta: { title: 'Status verifikasi email' },
+    },
+    {
       path: '/forgot-password',
       component: () => import('../views/auth/ForgotPasswordView.vue'),
       meta: { title: 'Lupa kata sandi' },

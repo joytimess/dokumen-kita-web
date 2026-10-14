@@ -142,7 +142,7 @@ describe('Adapter Sanctum dengan respons terkendali', () => {
     }
     await expect(authApi.logout()).rejects.toHaveProperty('response.status', 500)
   })
-  it('memuat CSRF 204, mengirim remember, lalu memastikan identitas lewat /me', async () => {
+  it('memuat CSRF 204, mengirim remember, memakai user respons tanpa /me tambahan', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
     const requests: InternalAxiosRequestConfig[] = []
     http.defaults.adapter = async (config) => {
@@ -159,7 +159,6 @@ describe('Adapter Sanctum dengan respons terkendali', () => {
     expect(requests.map((item) => item.url)).toEqual([
       'http://localhost:8000/sanctum/csrf-cookie',
       'http://localhost:8000/api/v1/auth/login',
-      'http://localhost:8000/api/v1/me',
     ])
     expect(JSON.parse(requests[1]!.data)).toEqual({
       email: user.email,
@@ -210,9 +209,15 @@ describe('Adapter Sanctum dengan respons terkendali', () => {
       response(
         config,
         config.method === 'get' ? 204 : 202,
-        config.method === 'get' ? '' : { data: { status: 'accepted', otp_expires_in: 300, resend_after: 60 } },
+        config.method === 'get'
+          ? ''
+          : { data: { status: 'accepted', otp_expires_in: 300, resend_after: 60 } },
       )
-    expect(await authApi.forgot(user.email)).toEqual({ status: 'accepted', otp_expires_in: 300, resend_after: 60 })
+    expect(await authApi.forgot(user.email)).toEqual({
+      status: 'accepted',
+      otp_expires_in: 300,
+      resend_after: 60,
+    })
   })
   it('tidak menerima respons identitas tanpa boolean email_verified', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')

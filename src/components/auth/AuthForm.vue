@@ -11,6 +11,7 @@ import { prototypeSubmit } from '../../services/auth.mock'
 import { authError } from '../../services/auth.errors'
 import { validateAuth } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
+import { afterAuthentication } from '../../utils/authRedirect'
 import type { AuthKind, FieldErrors } from '../../types/auth'
 const props = defineProps<{ kind: AuthKind }>()
 const route = useRoute()
@@ -46,6 +47,7 @@ const copy = computed(
 const oauthError = computed(() => {
   if (props.kind !== 'login') return ''
   const messages: Record<string, string> = {
+    session_expired: 'Sesi berakhir. Masuk kembali untuk melanjutkan verifikasi email.',
     oauth_denied: 'Masuk dengan Google dibatalkan. Silakan coba kembali.',
     email_not_verified:
       'Email akun Google belum terverifikasi. Gunakan akun dengan email terverifikasi.',
@@ -70,7 +72,7 @@ async function submit() {
   try {
     if (authMode === 'prototype') message.value = await prototypeSubmit(props.kind)
     else {
-      auth.user =
+      auth.setUser(
         props.kind === 'login'
           ? await authApi.login({
               email: fields.email.trim(),
@@ -82,13 +84,10 @@ async function submit() {
               email: fields.email.trim(),
               password: fields.password,
               password_confirmation: fields.password_confirmation,
-            })
+            }),
+      )
       auth.sessionError = ''
-      if (props.kind === 'login') await router.push('/')
-      else
-        message.value = auth.user.email_verified
-          ? 'Akun Anda sudah terautentikasi.'
-          : 'Akun Anda sudah dibuat dan sesi aktif. Email perlu diverifikasi; periksa email Anda. Halaman hasil verifikasi tersedia pada tahap berikutnya.'
+      await router.push(afterAuthentication(auth.user!.email_verified, route.query.redirect))
     }
   } catch (error) {
     const feedback = authError(error, props.kind)
@@ -141,7 +140,12 @@ function google() {
     SELAMAT DATANG DI DOKUMEN KITA
   </p>
   <h1>{{ copy.title }}</h1>
-  <p class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm" :class="kind === 'register' ? 'sm:mb-3! sm:leading-relaxed!' : undefined">{{ copy.description }}</p>
+  <p
+    class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm"
+    :class="kind === 'register' ? 'sm:mb-3! sm:leading-relaxed!' : undefined"
+  >
+    {{ copy.description }}
+  </p>
   <p
     v-if="authMode === 'prototype'"
     :class="kind === 'register' ? 'sm:mb-3! sm:py-2!' : undefined"
@@ -171,7 +175,17 @@ function google() {
     >
   </template>
   <template v-else>
-    <form ref="form" novalidate :aria-busy="busy" :class="kind === 'register' ? 'sm:[&>div]:mb-2.5! sm:[&_label]:mb-1! sm:[&_input]:min-h-11! sm:[&_input]:py-2!' : undefined" @submit.prevent="submit">
+    <form
+      ref="form"
+      novalidate
+      :aria-busy="busy"
+      :class="
+        kind === 'register'
+          ? 'sm:[&>div]:mb-2.5! sm:[&_label]:mb-1! sm:[&_input]:min-h-11! sm:[&_input]:py-2!'
+          : undefined
+      "
+      @submit.prevent="submit"
+    >
       <FormField
         v-if="kind === 'register'"
         id="name"

@@ -5,6 +5,7 @@ import HeroSection from '../components/landing/HeroSection.vue'
 import WorkflowDemo from '../components/landing/WorkflowDemo.vue'
 import FaqSection from '../components/landing/FaqSection.vue'
 import { useAuthStore } from '../stores/auth'
+import EmailVerificationActions from '../components/auth/EmailVerificationActions.vue'
 const menuOpen = ref(false)
 const auth = useAuthStore()
 const features = [
@@ -71,6 +72,19 @@ const features = [
       Sesi aktif sebagai {{ auth.user.name }}.
       {{ auth.user.email_verified ? '' : 'Email Anda belum terverifikasi.' }}
     </div>
+    <section
+      v-if="auth.user && !auth.user.email_verified"
+      aria-label="Pengingat verifikasi email"
+      class="mx-auto my-4 w-[calc(100%-36px)] max-w-[1200px] rounded-lg border border-line bg-sage p-5 text-sm"
+    >
+      <p>Email kamu belum terverifikasi. Verifikasi email untuk melengkapi akunmu.</p>
+      <RouterLink
+        to="/email/verify"
+        class="inline-flex min-h-11 items-center font-semibold text-primary underline"
+        >Verifikasi email</RouterLink
+      >
+      <EmailVerificationActions />
+    </section>
     <HeroSection />
     <div
       class="grid grid-cols-2 gap-x-2 gap-y-[18px] border-y border-line py-5 text-[10px] md:grid-cols-4 md:gap-5 md:py-[25px] md:text-xs [&_span]:flex [&_span]:items-center [&_span]:gap-1.5 md:[&_span]:justify-center md:[&_span]:gap-2.5 [&_i]:text-primary [&_i]:not-italic mx-auto w-[calc(100%-36px)] max-w-[1200px] sm:w-[calc(100%-48px)] lg:w-[calc(100%-80px)]"

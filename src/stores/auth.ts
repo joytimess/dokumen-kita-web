@@ -8,20 +8,42 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const restoring = ref(false)
   const sessionError = ref('')
-  async function restore() {
-    if (authMode !== 'api') return
+  let identityRequest: Promise<void> | undefined
+  let initialized = false
+  let sessionVersion = 0
+  function setUser(value: User) {
+    sessionVersion++
+    user.value = value
+    sessionError.value = ''
+    initialized = true
+  }
+  function refresh() {
+    if (identityRequest) return identityRequest
+    if (authMode !== 'api') return Promise.resolve()
     restoring.value = true
-    try {
-      user.value = await authApi.me()
-      sessionError.value = ''
-    } catch (error) {
-      user.value = null
-      if (!(axios.isAxiosError(error) && error.response?.status === 401))
-        sessionError.value =
-          'Sesi belum dapat diperiksa. Periksa koneksi Anda, lalu muat ulang halaman.'
-    } finally {
-      restoring.value = false
-    }
+    const version = sessionVersion
+    identityRequest = (async () => {
+      try {
+        const currentUser = await authApi.me()
+        if (version !== sessionVersion) return
+        user.value = currentUser
+        sessionError.value = ''
+      } catch (error) {
+        if (version !== sessionVersion) return
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          user.value = null
+          sessionError.value = ''
+        } else sessionError.value = 'Status verifikasi belum dapat diperiksa. Coba lagi.'
+      } finally {
+        restoring.value = false
+        initialized = true
+        identityRequest = undefined
+      }
+    })()
+    return identityRequest
+  }
+  function restore() {
+    return initialized ? Promise.resolve() : refresh()
   }
   async function logout() {
     if (authMode !== 'api') throw new Error('Logout API belum aktif pada prototype.')
@@ -30,8 +52,9 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       if (!(axios.isAxiosError(error) && error.response?.status === 401)) throw error
     }
+    sessionVersion++
     user.value = null
     sessionError.value = ''
   }
-  return { user, restoring, sessionError, restore, logout }
+  return { user, restoring, sessionError, restore, refresh, setUser, logout }
 })
