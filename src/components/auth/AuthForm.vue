@@ -41,11 +41,6 @@ const copy = computed(
         description: 'Siapkan dokumen dan jalani proses tanda tangan dengan lebih terarah.',
         button: 'Buat akun',
       },
-      forgot: {
-        title: 'Lupa kata sandi?',
-        description: 'Masukkan email akun Anda untuk meminta tautan pemulihan kata sandi.',
-        button: 'Kirim tautan pemulihan',
-      },
     })[props.kind],
 )
 const oauthError = computed(() => {
@@ -74,10 +69,7 @@ async function submit() {
   busy.value = true
   try {
     if (authMode === 'prototype') message.value = await prototypeSubmit(props.kind)
-    else if (props.kind === 'forgot') {
-      await authApi.forgot(fields.email.trim())
-      message.value = 'Jika alamat email tersebut terdaftar, tautan pemulihan akan dikirim.'
-    } else {
+    else {
       auth.user =
         props.kind === 'login'
           ? await authApi.login({
@@ -146,7 +138,7 @@ function google() {
 </script>
 <template>
   <p class="mb-6 text-[11px] font-bold tracking-[0.16em] text-primary">
-    {{ kind === 'forgot' ? 'PULIHKAN AKSES ANDA' : 'SELAMAT DATANG DI DOKUMEN KITA' }}
+    SELAMAT DATANG DI DOKUMEN KITA
   </p>
   <h1>{{ copy.title }}</h1>
   <p class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm">{{ copy.description }}</p>
@@ -160,7 +152,7 @@ function google() {
     :message="auth.sessionError"
     error
   /><FeedbackMessage :message="message" :error="failed" />
-  <template v-if="auth.user && kind !== 'forgot'"
+  <template v-if="auth.user"
     ><FeedbackMessage
       :message="`Sesi aktif sebagai ${auth.user.name}.${auth.user.email_verified ? '' : ' Email Anda belum terverifikasi.'}`"
     /><RouterLink
@@ -200,7 +192,6 @@ function google() {
         :disabled="busy"
       />
       <PasswordField
-        v-if="kind !== 'forgot'"
         id="password"
         v-model="fields.password"
         label="Kata sandi"
@@ -232,7 +223,6 @@ function google() {
       }}</BaseButton>
     </form>
     <button
-      v-if="kind !== 'forgot'"
       class="mt-3 flex min-h-12 w-full items-center justify-center gap-3 rounded-[7px] border border-line bg-white px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:bg-soft motion-reduce:transition-none"
       type="button"
       :disabled="busy || auth.restoring"
@@ -269,12 +259,6 @@ function google() {
       class="mt-[23px] text-center text-xs text-muted [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
     >
       Sudah punya akun? <RouterLink to="/login">Masuk</RouterLink>
-    </p>
-    <p
-      v-else
-      class="mt-[23px] text-center text-xs text-muted [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
-    >
-      <RouterLink to="/login">← Kembali ke masuk</RouterLink>
     </p>
   </template>
 </template>

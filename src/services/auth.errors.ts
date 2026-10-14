@@ -15,7 +15,6 @@ export function authError(
     const fields = error.response?.data?.error?.errors
     if (kind === 'login')
       result.message = 'Email atau kata sandi salah. Periksa kembali dan coba lagi.'
-    else if (kind === 'forgot') result.message = 'Periksa format alamat email Anda, lalu coba lagi.'
     else {
       result.message = 'Periksa kembali data pendaftaran Anda.'
       for (const key of ['name', 'email', 'password', 'password_confirmation'])

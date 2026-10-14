@@ -58,7 +58,7 @@ describe('Validasi sesuai kontrak', () => {
         }),
       ),
     ).toEqual(['name', 'email', 'password', 'password_confirmation'])
-    expect(validateAuth('forgot', { ...valid, email: 'bukan-email' })).toHaveProperty('email')
+    expect(validateAuth('login', { ...valid, email: 'bukan-email' })).toHaveProperty('email')
   })
   it('menolak password pendek dan menempatkan mismatch pada konfirmasi', () => {
     expect(
@@ -78,7 +78,6 @@ describe('Validasi sesuai kontrak', () => {
   it('prototype tidak mengklaim sesi, akun, atau pengiriman email nyata', () => {
     expect(prototypeMessages.login).toContain('setelah API')
     expect(prototypeMessages.register).toContain('Belum ada akun')
-    expect(prototypeMessages.forgot).toContain('belum ada email')
   })
 })
 describe('Error backend', () => {
@@ -105,7 +104,7 @@ describe('Error backend', () => {
     ).toEqual({ email: 'Email telah digunakan.', password: 'Password tidak valid.' })
   })
   it('429 tanpa countdown, 401 membersihkan sesi, 403 tidak selalu verifikasi', () => {
-    expect(authError(apiFailure(429), 'forgot').message).toBe(
+    expect(authError(apiFailure(429), 'login').message).toBe(
       'Terlalu banyak percobaan. Silakan coba lagi nanti.',
     )
     expect(authError(apiFailure(401), 'login').expired).toBe(true)
@@ -116,9 +115,9 @@ describe('Error backend', () => {
   })
   it('tidak membocorkan pesan internal atau mengklaim email dikirim saat gagal', () => {
     expect(
-      authError(apiFailure(500, { error: { message: 'Stack trace rahasia' } }), 'forgot').message,
+      authError(apiFailure(500, { error: { message: 'Stack trace rahasia' } }), 'login').message,
     ).not.toContain('rahasia')
-    expect(authError(new Error('rahasia'), 'forgot').message).toContain('coba lagi')
+    expect(authError(new Error('rahasia'), 'login').message).toContain('coba lagi')
   })
 })
 describe('Adapter Sanctum dengan respons terkendali', () => {
@@ -211,9 +210,9 @@ describe('Adapter Sanctum dengan respons terkendali', () => {
       response(
         config,
         config.method === 'get' ? 204 : 202,
-        config.method === 'get' ? '' : { data: { status: 'sent' } },
+        config.method === 'get' ? '' : { data: { status: 'accepted', otp_expires_in: 300, resend_after: 60 } },
       )
-    expect(await authApi.forgot(user.email)).toBeUndefined()
+    expect(await authApi.forgot(user.email)).toEqual({ status: 'accepted', otp_expires_in: 300, resend_after: 60 })
   })
   it('tidak menerima respons identitas tanpa boolean email_verified', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')

@@ -5,6 +5,7 @@ withDefaults(
     label: string
     type?: string
     autocomplete?: string
+    inputmode?: 'numeric' | 'email' | 'text'
     error?: string
     hint?: string
     maxlength?: number
@@ -13,6 +14,12 @@ withDefaults(
   { type: 'text' },
 )
 const model = defineModel<string>({ required: true })
+function pasteCode(event: ClipboardEvent) {
+  const input = event.target as HTMLInputElement
+  if (input.inputMode !== 'numeric') return
+  const text = event.clipboardData?.getData('text').trim()
+  if (text !== undefined) { event.preventDefault(); model.value = text.slice(0, 6) }
+}
 </script>
 <template>
   <div
@@ -25,6 +32,8 @@ const model = defineModel<string>({ required: true })
       :name="id"
       :type="type"
       :autocomplete="autocomplete"
+      :inputmode="inputmode"
+      @paste="pasteCode"
       :maxlength="maxlength"
       :disabled="disabled"
       :aria-invalid="!!error"

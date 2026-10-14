@@ -1,5 +1,5 @@
 import { apiOrigin, http, mutation } from './http'
-import type { LoginPayload, RegisterPayload, User } from '../types/auth'
+import type { LoginPayload, RegisterPayload, User, ForgotResponse, VerifyOtpPayload, VerifyOtpResponse, ResetPasswordPayload } from '../types/auth'
 type UserResponse = { data: User }
 function readUser(response: UserResponse): User {
   const user = response?.data
@@ -26,7 +26,13 @@ export const authApi = {
     return this.me()
   },
   async forgot(email: string) {
-    await mutation('/api/v1/auth/password/forgot', { email })
+    return (await mutation<{ data: ForgotResponse }>('/api/v1/auth/password/forgot', { email })).data
+  },
+  async verifyOtp(payload: VerifyOtpPayload) {
+    return (await mutation<{ data: VerifyOtpResponse }>('/api/v1/auth/password/verify-otp', payload)).data
+  },
+  async resetPassword(payload: ResetPasswordPayload) {
+    return (await mutation<{ data: { status: 'reset' } }>('/api/v1/auth/password/reset', payload)).data
   },
   async logout() {
     await mutation<void>('/api/v1/auth/logout', {})

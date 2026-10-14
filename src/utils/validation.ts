@@ -17,7 +17,7 @@ export function validateAuth(kind: AuthKind, fields: AuthFields): FieldErrors {
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     errors.email = 'Masukkan alamat email yang valid.'
   else if (email.length > 255) errors.email = 'Email maksimal 255 karakter.'
-  if (kind !== 'forgot') {
+  {
     if (!fields.password) errors.password = 'Kata sandi wajib diisi.'
     else if (kind === 'register' && fields.password.length < 8)
       errors.password = 'Kata sandi minimal 8 karakter.'

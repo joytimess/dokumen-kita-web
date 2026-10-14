@@ -15,5 +15,14 @@ export interface RegisterPayload {
   password: string
   password_confirmation: string
 }
-export type AuthKind = 'login' | 'register' | 'forgot'
+export type AuthKind = 'login' | 'register'
 export type FieldErrors = Record<string, string>
+export interface ForgotResponse { status: 'accepted'; otp_expires_in: number; resend_after: number }
+export interface VerifyOtpPayload { email: string; otp: string }
+export interface VerifyOtpResponse { reset_token: string; expires_in: number }
+export interface ResetPasswordPayload { email: string; reset_token: string; password: string; password_confirmation: string }
+export interface RecoveryAdapter {
+  forgot(email: string): Promise<ForgotResponse>
+  verifyOtp(payload: VerifyOtpPayload): Promise<VerifyOtpResponse>
+  resetPassword(payload: ResetPasswordPayload): Promise<{ status: 'reset' }>
+}

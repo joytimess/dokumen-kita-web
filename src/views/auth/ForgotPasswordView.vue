@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AuthLayout from '../../layouts/AuthLayout.vue'
-import AuthForm from '../../components/auth/AuthForm.vue'
+import PasswordRecoveryForm from '../../components/auth/PasswordRecoveryForm.vue'
 </script>
 <template>
-  <AuthLayout><AuthForm kind="forgot" /></AuthLayout>
+  <AuthLayout><PasswordRecoveryForm  /></AuthLayout>
 </template>
