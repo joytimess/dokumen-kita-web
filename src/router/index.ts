@@ -1,4 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { authMode } from '../services/http'
+import { rememberInvitation, pendingInvitation, clearInvitation } from '../utils/invitation'
+import { afterAuthentication } from '../utils/authRedirect'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -7,6 +11,53 @@ const router = createRouter({
       path: '/',
       component: () => import('../views/LandingView.vue'),
       meta: { title: 'Dari draft sampai sepakat' },
+    },
+    {
+      path: '/',
+      component: () => import('../layouts/WorkspaceLayout.vue'),
+      meta: { workspace: true },
+      children: [
+        {
+          path: '/dashboard',
+          component: () => import('../views/workspace/DocumentsView.vue'),
+          meta: { title: 'Ringkasan' },
+        },
+        {
+          path: '/documents',
+          component: () => import('../views/workspace/DocumentsView.vue'),
+          meta: { title: 'Dokumen Saya' },
+        },
+        {
+          path: '/documents/new',
+          component: () => import('../views/workspace/NewDocumentView.vue'),
+          meta: { title: 'Buat dokumen' },
+        },
+        {
+          path: '/documents/:documentGuid',
+          component: () => import('../views/workspace/DocumentDetailView.vue'),
+          meta: { title: 'Detail dokumen' },
+        },
+        {
+          path: '/documents/:documentGuid/edit',
+          component: () => import('../views/workspace/DocumentEditorView.vue'),
+          meta: { title: 'Penyusunan draft' },
+        },
+        {
+          path: '/documents/:documentGuid/versions/:versionGuid/view',
+          component: () => import('../views/workspace/DocumentViewerView.vue'),
+          meta: { title: 'Baca dokumen' },
+        },
+        {
+          path: '/signature-assets',
+          component: () => import('../views/workspace/SignatureAssetsView.vue'),
+          meta: { title: 'Tanda Tangan Saya' },
+        },
+        {
+          path: '/invitations/claim',
+          component: () => import('../views/workspace/InvitationClaimView.vue'),
+          meta: { title: 'Undangan dokumen', invitation: true },
+        },
+      ],
     },
     {
       path: '/login',
@@ -53,6 +104,27 @@ const router = createRouter({
         ? { el: to.hash, top: 100, behavior }
         : { top: 0, behavior }
   },
+})
+router.beforeEach(async (to) => {
+  if (to.meta.invitation && to.query.token) {
+    const valid = rememberInvitation(to.query.token)
+    if (!valid) clearInvitation()
+    return { path: '/invitations/claim', query: valid ? {} : { error: 'invalid' }, replace: true }
+  }
+  if (authMode !== 'api') return
+  const common = ['/', '/login', '/register'].includes(to.path)
+  if (!to.meta.workspace && !common) return
+  const auth = useAuthStore()
+  await auth.restore()
+  if (auth.sessionError) return
+  if (!auth.user && to.meta.workspace) return { path: '/login', query: { redirect: to.fullPath } }
+  if (auth.user && to.meta.invitation && !auth.user.email_verified)
+    return afterAuthentication(false, '/invitations/claim')
+  if (auth.user && common)
+    return afterAuthentication(
+      auth.user.email_verified,
+      pendingInvitation() ? '/invitations/claim' : to.query.redirect,
+    )
 })
 router.afterEach((to) => {
   document.title = `${String(to.meta.title)} · Dokumen Kita`

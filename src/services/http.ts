@@ -26,13 +26,17 @@ export const http = axios.create({
 export async function csrf() {
   await http.get(`${apiOrigin()}/sanctum/csrf-cookie`)
 }
-export async function mutation<T>(path: string, payload: unknown): Promise<T> {
+export async function mutation<T>(
+  path: string,
+  payload: unknown,
+  method: 'post' | 'patch' | 'put' = 'post',
+): Promise<T> {
   await csrf()
   try {
-    return (await http.post<T>(`${apiOrigin()}${path}`, payload)).data
+    return (await http[method]<T>(`${apiOrigin()}${path}`, payload)).data
   } catch (error) {
     if (!axios.isAxiosError(error) || error.response?.status !== 419) throw error
     await csrf()
-    return (await http.post<T>(`${apiOrigin()}${path}`, payload)).data
+    return (await http[method]<T>(`${apiOrigin()}${path}`, payload)).data
   }
 }

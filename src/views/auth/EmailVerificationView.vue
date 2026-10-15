@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { workspaceDestination } from '../../utils/authRedirect'
+import { pendingInvitation } from '../../utils/invitation'
 import AuthLayout from '../../layouts/AuthLayout.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
@@ -11,6 +13,8 @@ import { authMode } from '../../services/http'
 const props = defineProps<{ result?: boolean }>()
 const auth = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+const destination = computed(() => pendingInvitation() ? '/invitations/claim' : workspaceDestination(route.query.redirect))
 const loading = ref(true)
 const logoutBusy = ref(false)
 const logoutError = ref('')
@@ -21,7 +25,7 @@ function redirect() {
   if (props.result || loading.value || auth.restoring || auth.sessionError || authMode !== 'api')
     return
   if (!auth.user) void router.replace({ path: '/login', query: { redirect: '/email/verify' } })
-  else if (auth.user.email_verified) void router.replace('/email/verified')
+  else if (auth.user.email_verified) void router.replace(destination.value)
 }
 watch(() => [auth.user, auth.restoring, auth.sessionError], redirect)
 async function load(force = false) {
@@ -85,9 +89,9 @@ onMounted(() => load())
         Terima kasih, alamat email akunmu sudah dikonfirmasi.
       </p>
       <RouterLink
-        to="/"
+        :to="destination"
         class="inline-flex min-h-12 items-center rounded-[7px] bg-primary px-6 py-3 text-sm font-semibold text-white"
-        >Lanjut ke beranda</RouterLink
+        >Lanjutkan</RouterLink
       >
     </template>
     <template v-else-if="!auth.user">

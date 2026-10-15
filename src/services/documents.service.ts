@@ -1,0 +1,95 @@
+import { apiOrigin, authMode, http, mutation } from './http'
+import type {
+  Assignment,
+  DocumentRecord,
+  DocumentVersion,
+  DraftPayload,
+  Page,
+  Placeholder,
+  SignatureAsset,
+  SignaturePayload,
+} from '../types/documents'
+
+async function get<T>(path: string, params?: Record<string, string | number>) {
+  if (authMode !== 'api')
+    throw new Error('Workspace memerlukan mode API. Tidak ada data contoh yang dibuat.')
+  return (await http.get<T>(`${apiOrigin()}/api/v1${path}`, { params })).data
+}
+async function write<T>(path: string, payload: unknown, method: 'post' | 'put' | 'patch' = 'post') {
+  if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')
+  return (await mutation<{ data: T }>(`/api/v1${path}`, payload, method)).data
+}
+export const documentsApi = {
+  list: (page = 1, status = '') =>
+    get<Page<DocumentRecord>>('/documents', { page, per_page: 15, ...(status ? { status } : {}) }),
+  detail: (guid: string) =>
+    get<{ data: DocumentRecord }>(`/documents/${encodeURIComponent(guid)}`).then((r) => r.data),
+  create: (title: string) => write<DocumentRecord>('/documents', { title }),
+  save: (guid: string, payload: DraftPayload) =>
+    write<DocumentVersion>(`/versions/${guid}`, payload, 'patch'),
+  import: (guid: string, file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return write<DocumentVersion>(`/documents/${guid}/imports`, body)
+  },
+  signers: (guid: string, emails: string[]) =>
+    write<DocumentVersion>(
+      `/versions/${guid}/signers`,
+      {
+        signers: emails.map((email, index) => ({
+          email: email.trim().toLowerCase(),
+          sequence_number: index + 1,
+        })),
+      },
+      'put',
+    ),
+  placeholders: (guid: string, placeholders: Placeholder[]) =>
+    write<Assignment>(
+      `/assignments/${guid}/placeholders`,
+      {
+        placeholders: placeholders.map(({ page_number, x, y, width, height }) => ({
+          page_number,
+          x,
+          y,
+          width,
+          height,
+        })),
+      },
+      'put',
+    ),
+  publish: (guid: string) => write<DocumentVersion>(`/versions/${guid}/publish`, {}),
+  claim: (token: string) => write<Assignment>('/invitations/claim', { token }),
+  resend: (guid: string) => write<Assignment>(`/assignments/${guid}/resend-invitation`, {}),
+  read: (guid: string, hash: string) =>
+    write<unknown>(`/assignments/${guid}/read-confirmation`, {
+      confirmed: true,
+      version_content_hash: hash,
+    }),
+  sign: (guid: string, payload: SignaturePayload) =>
+    write<unknown>(`/assignments/${guid}/signatures`, payload),
+  assets: (page = 1) => get<Page<SignatureAsset>>('/signature-assets', { page }),
+  uploadAsset: (file: File, source: 'drawn' | 'upload') => {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('source_type', source)
+    return write<SignatureAsset>('/signature-assets', body)
+  },
+  async assetImage(guid: string, signal?: AbortSignal) {
+    return (
+      await http.get<Blob>(`${apiOrigin()}/api/v1/signature-assets/${guid}/image`, {
+        responseType: 'blob',
+        signal,
+      })
+    ).data
+  },
+  async pdf(guid: string, signal?: AbortSignal) {
+    const response = await http.get<ArrayBuffer>(`${apiOrigin()}/api/v1/versions/${guid}/pdf`, {
+      responseType: 'arraybuffer',
+      signal,
+    })
+    return {
+      data: new Uint8Array(response.data),
+      hash: String(response.headers['x-document-content-hash'] ?? ''),
+    }
+  },
+}

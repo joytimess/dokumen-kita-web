@@ -12,6 +12,15 @@ export function internalDestination(value: unknown): string {
     return '/'
   return `${url.pathname}${url.search}${url.hash}`
 }
+export function workspaceDestination(destination: unknown): string {
+  const safe = internalDestination(destination)
+  return safe === '/' || safe.split('?')[0] === '/email/verify' ? '/dashboard' : safe
+}
 export function afterAuthentication(verified: boolean, destination: unknown): string {
-  return verified ? internalDestination(destination) : '/email/verify'
+  const target = workspaceDestination(destination)
+  return verified
+    ? target
+    : target === '/dashboard'
+      ? '/email/verify'
+      : `/email/verify?redirect=${encodeURIComponent(target)}`
 }

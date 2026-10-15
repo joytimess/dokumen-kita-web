@@ -1,6 +1,6 @@
 # dokumen-kita-web
 
-Frontend tahap pertama sesuai `dokumen-kita-frontend-prd.md`: landing, login, register, forgot password, dan 404. Stack: Vue 3, TypeScript, Vite, Vue Router, Pinia, Axios, dan Tailwind CSS dari npm.
+Frontend Dokumen Kita mencakup landing/autentikasi existing dan workspace sesuai `PRD-Frontend-Dokumen-Kita-v2.md`: ringkasan owner, dokumen, editor draft, penerima, posisi tanda tangan, viewer PDF, klaim undangan, dan aset tanda tangan. Stack: Vue 3, TypeScript, Vite, Vue Router, Pinia, Axios, Tailwind CSS, Editor.js, PDF.js, dan DOMPurify dari npm. Kemampuan preview/publish/signature tetap bersyarat pada snapshot dan izin backend.
 
 ## Menjalankan aplikasi
 
@@ -12,9 +12,32 @@ Gunakan Node 22.22.2+ atau 24.15.0+ untuk kompatibilitas seluruh tool developmen
 
 Adapter API disiapkan terpisah di `src/services/`. Untuk pengujian integrasi, set `VITE_AUTH_MODE=api` dan `VITE_API_BASE_URL=http://localhost:8000` atau origin API deployment tanpa suffix `/api/v1`. Restart Vite/build setelah mengubah environment. Nilai VITE_* bersifat publik, jangan isi secret.
 
-Adapter memakai cookie Sanctum, credentials, `Accept: application/json`, CSRF `/sanctum/csrf-cookie`, dan header X-XSRF-TOKEN. Mutation dengan 419 memulihkan CSRF dan retry maksimal sekali. Login/register menggunakan user dari respons backend tanpa `/me` tambahan. Akun belum terverifikasi diarahkan ke `/email/verify`; akun terverifikasi melanjutkan ke tujuan internal yang valid atau `/`. OAuth dimulai melalui navigasi browser ke backend. Error 422 login bersifat generik dan validasi register membaca `error.errors`.
+Adapter memakai cookie Sanctum, credentials, `Accept: application/json`, CSRF `/sanctum/csrf-cookie`, dan header X-XSRF-TOKEN. Mutation dengan 419 memulihkan CSRF dan retry maksimal sekali. Login/register menggunakan user dari respons backend tanpa `/me` tambahan. Akun belum terverifikasi diarahkan ke `/email/verify`; akun terverifikasi melanjutkan ke tujuan internal yang valid atau `/dashboard`. Tujuan undangan dipertahankan selama login/verifikasi/Google melalui pending token sementara pada sessionStorage. OAuth dimulai melalui navigasi browser ke backend. Error 422 login bersifat generik dan validasi register membaca `error.errors`.
 
-**Status integrasi:** belum diverifikasi dengan backend nyata dari lingkungan frontend. Pertahankan mode prototype pada deployment publik sampai cookie, CSRF, CORS, OAuth, dan mailer diperiksa. Konfigurasikan backend `CORS_ALLOWED_ORIGINS`, `SANCTUM_STATEFUL_DOMAINS` (termasuk port lokal), `FRONTEND_URL`, `SESSION_DOMAIN`, `SESSION_SECURE_COOKIE`, dan `SESSION_SAME_SITE` sesuai lingkungan. Lokal MAIL_MAILER=log tidak mengirim email ke inbox. Dashboard, editor, dan tanda tangan adalah fase lanjutan.
+**Status integrasi:** pengguna menyatakan autentikasi existing telah diuji sendiri. Integrasi workspace baru belum diuji end-to-end dengan backend dan provider nyata dalam pekerjaan v2. Konfigurasikan backend `CORS_ALLOWED_ORIGINS`, `SANCTUM_STATEFUL_DOMAINS` (termasuk port lokal), `FRONTEND_URL`, `SESSION_DOMAIN`, `SESSION_SECURE_COOKIE`, dan `SESSION_SAME_SITE` sesuai lingkungan. Lokal MAIL_MAILER=log tidak mengirim email ke inbox. Workspace membutuhkan `VITE_AUTH_MODE=api`; mode prototype tidak membuat data workspace palsu.
+
+## Workspace v2
+
+Sesi valid pada `/`, `/login`, dan `/register` diarahkan ke dashboard atau tujuan undangan. Recovery dan verifikasi tetap memiliki alur sendiri. Kegagalan jaringan saat restore menampilkan retry; tidak diperlakukan sebagai logout. Sidebar memuat Ringkasan, Dokumen Saya, dan Tanda Tangan Saya; pada mobile menggunakan drawer.
+
+Route baru: `/dashboard`, `/documents`, `/documents/new`, `/documents/:documentGuid`, `/documents/:documentGuid/edit`, `/documents/:documentGuid/versions/:versionGuid/view`, `/invitations/claim`, dan `/signature-assets`. Refresh deep-link route tersebut tetap memerlukan fallback SPA Apache di bawah.
+
+Editor memakai Editor.js 2.31.7 dengan Header 2.8.8, List 2.0.9, Table 2.4.6, dan Image 2.10.3. Header 3 tidak digunakan karena memakai SDK berbeda. DOMPurify 3.4.17 membersihkan markup inline sebelum data dirender/disimpan. Skema list dinormalisasi antara format tool dan sanitizer backend; gambar hanya data PNG/JPEG/WebP inline. Tidak ada URL gambar remote atau konversi sumber impor ke editor.
+
+Autosave debounce 1.000 ms, satu request aktif, dan antrean snapshot lokal. Simpan manual/keluar tahap melakukan flush; kegagalan tidak membuang isi atau retry terus-menerus. Navigasi dan logout memeriksa pekerjaan yang belum tersimpan. Isi dokumen tidak disimpan di localStorage. Konflik backend menghentikan pengiriman dan mempertahankan perubahan di halaman untuk ditinjau.
+
+PDF.js 6.4.299 dimuat pada route terkait; worker, CMaps, font standar, WASM decoder, dan profil warna disajikan lokal bersama build oleh `build/pdfAssets.ts`. Viewer merender satu halaman aktif, memiliki navigasi/zoom/pencarian multi-halaman bertahap, serta gerbang baca. Tanpa text layer, OCR tidak dijanjikan. Semua halaman harus berhasil dikunjungi sebelum akhir dokumen dapat memenuhi gerbang; checkbox persetujuan tetap eksplisit. Signature retry menggunakan aset, hash, dan idempotency key yang sama setelah hasil ambigu.
+
+### Prasyarat snapshot dan contract gap
+
+- Draft baru, termasuk yang memiliki sumber PDF, belum otomatis memperoleh snapshot. Backend saat ini tidak menyediakan endpoint/job renderer preview. Posisi dan publish dikunci tanpa preview `ready`, hash, page count, dan assignment tersimpan.
+- Uji posisi/publish/read/signature memerlukan snapshot backend yang valid: PDF privat, hash yang cocok, jumlah halaman, metadata preview siap, dan assignment yang sesuai. Siapkan melalui fixture backend yang ditinjau tim backend; frontend tidak mengunggah PDF melalui endpoint buatan untuk melewati prasyarat.
+- Respons klaim hanya memuat assignment dan `version_guid`, tanpa `document_guid`, judul, atau nomor versi. Klaim ready dapat membaca snapshot memakai versi dan hash resmi dari header PDF; label generik dokumen undangan bukan judul dari server. Persetujuan dari entry klaim diblokir tanpa metadata lengkap; alur signature tersedia melalui viewer detail dokumen berizin. Navigasi ke detail dan tombol status waiting setelah token dibersihkan belum dapat dihubungkan. Setelah refresh, buka ulang tautan asli; konteks privat hasil klaim tidak disimpan persisten. Tidak ada endpoint detail assignment/versi untuk menutup gap tersebut.
+- URL viewer dengan versi historis yang berbeda dari `current_version` diblokir karena API detail hanya menyediakan metadata versi terkini; tidak memakai metadata versi lain untuk mengotorisasi PDF historis.
+- Persetujuan terakhir menghasilkan `finalizing`. UI tidak menjanjikan job final otomatis atau PDF final bertanda tangan. Status `completed` hanya ditampilkan jika benar-benar dikembalikan backend.
+- Pencarian judul dibatasi pada halaman data yang dimuat; pagination/status mengikuti API aktual. Tidak ada statistik total dari satu halaman, inbox penerima, audit, revisi, hidden, notifikasi, atau endpoint preview buatan.
+
+Rincian kontrak, hasil pemeriksaan, dan pekerjaan bersyarat: [handoff frontend v2](docs/frontend-v2-handoff.md).
 
 ## Verifikasi email
 

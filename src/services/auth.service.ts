@@ -1,4 +1,5 @@
 import { apiOrigin, http, mutation } from './http'
+import { workspaceDestination } from '../utils/authRedirect'
 import type {
   LoginPayload,
   RegisterPayload,
@@ -50,7 +51,7 @@ export const authApi = {
   async logout() {
     await mutation<void>('/api/v1/auth/logout', {})
   },
-  google() {
-    window.location.assign(`${apiOrigin()}/api/v1/auth/google/redirect?redirect=%2F`)
+  google(destination?: string) {
+    window.location.assign(`${apiOrigin()}/api/v1/auth/google/redirect?redirect=${encodeURIComponent(workspaceDestination(destination))}`)
   },
 }

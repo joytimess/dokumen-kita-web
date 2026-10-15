@@ -4,6 +4,7 @@ import axios from 'axios'
 import { authMode } from '../services/http'
 import { authApi } from '../services/auth.service'
 import type { User } from '../types/auth'
+import { clearInvitation } from '../utils/invitation'
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const restoring = ref(false)
@@ -55,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
     sessionVersion++
     user.value = null
     sessionError.value = ''
+    clearInvitation()
   }
   return { user, restoring, sessionError, restore, refresh, setUser, logout }
 })

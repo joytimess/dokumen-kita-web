@@ -12,6 +12,7 @@ import { authError } from '../../services/auth.errors'
 import { validateAuth } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
 import { afterAuthentication } from '../../utils/authRedirect'
+import { pendingInvitation } from '../../utils/invitation'
 import type { AuthKind, FieldErrors } from '../../types/auth'
 const props = defineProps<{ kind: AuthKind }>()
 const route = useRoute()
@@ -87,7 +88,7 @@ async function submit() {
             }),
       )
       auth.sessionError = ''
-      await router.push(afterAuthentication(auth.user!.email_verified, route.query.redirect))
+      await router.push(afterAuthentication(auth.user!.email_verified, pendingInvitation() ? '/invitations/claim' : route.query.redirect))
     }
   } catch (error) {
     const feedback = authError(error, props.kind)
@@ -128,7 +129,7 @@ function google() {
     return
   }
   try {
-    authApi.google()
+    authApi.google(pendingInvitation() ? '/invitations/claim' : typeof route.query.redirect === 'string' ? route.query.redirect : undefined)
   } catch {
     failed.value = true
     message.value = 'Origin API belum dikonfigurasi dengan benar. Hubungi pengelola.'
