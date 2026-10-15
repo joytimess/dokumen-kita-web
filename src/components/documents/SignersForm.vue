@@ -19,6 +19,7 @@ const { busy, error, fields, run } = useWorkspaceRequest()
 watch(
   () => props.assignments,
   (value) => {
+    if (baseline.value && JSON.stringify(emails.value) !== baseline.value) return
     emails.value = [...value]
       .sort((a, b) => a.sequence_number - b.sequence_number)
       .map((a) => a.recipient_email)

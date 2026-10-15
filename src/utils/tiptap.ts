@@ -37,7 +37,8 @@ export function editorDataToHtml(data: EditorData): string {
       case 'list': return listHtml(value.items as unknown[], value.style === 'ordered' ? 'ol' : 'ul')
       case 'table': {
         const rows = value.content as unknown[][]
-        return `<table><tbody>${rows.map((row, index) => `<tr>${row.map((cell) => {
+        const table = value.showBorders === false ? '<table data-show-borders="false">' : '<table>'
+        return `${table}<tbody>${rows.map((row, index) => `<tr>${row.map((cell) => {
           const tag = value.withHeadings && index === 0 ? 'th' : 'td'
           return `<${tag}><p>${blockText(cell)}</p></${tag}>`
         }).join('')}</tr>`).join('')}</tbody></table>`
@@ -108,7 +109,7 @@ function tableData(node: TiptapNode) {
   const withHeadings = !!rows[0]?.length && rows[0].every((cell) => cell.header)
   if (rows.some((row, index) => row.some((cell) => cell.header !== (withHeadings && index === 0))))
     throw new Error('Hanya baris pertama yang dapat menjadi judul tabel.')
-  return { withHeadings, content: rows.map((row) => row.map((cell) => cell.text)) }
+  return { withHeadings, ...(node.attrs?.showBorders === false ? { showBorders: false } : {}), content: rows.map((row) => row.map((cell) => cell.text)) }
 }
 
 export function tiptapToEditorData(doc: TiptapNode): EditorData {

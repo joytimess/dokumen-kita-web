@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { Editor, EditorContent } from '@tiptap/vue-3'
+import { Editor, EditorContent, Extension } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { TableKit } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
@@ -56,17 +56,13 @@ function selectedTable() {
       return { position: selection.$from.before(depth), node: selection.$from.node(depth) }
   }
 }
-function tableElement() {
-  const table = selectedTable()
-  return table ? editor.value?.view.nodeDOM(table.position) as HTMLElement | null : null
-}
 function tableLinesHidden() {
   void toolbarVersion.value
-  return tableElement()?.classList.contains('table-lines-hidden') ?? false
+  return selectedTable()?.node.attrs.showBorders === false
 }
 function toggleTableLines() {
-  tableElement()?.classList.toggle('table-lines-hidden')
-  toolbarVersion.value++
+  const table = selectedTable()
+  if (table) editor.value?.chain().focus().updateAttributes('table', { showBorders: table.node.attrs.showBorders === false }).run()
 }
 function updateTableCursor(event: MouseEvent) {
   const view = editor.value?.view
@@ -146,6 +142,22 @@ const DocumentImage = Image.extend({
   },
 }).configure({ allowBase64: true })
 
+const TableBorders = Extension.create({
+  name: 'tableBorders',
+  addGlobalAttributes() {
+    return [{
+      types: ['table'],
+      attributes: {
+        showBorders: {
+          default: true,
+          parseHTML: (element: HTMLElement) => element.getAttribute('data-show-borders') !== 'false',
+          renderHTML: (attributes: { showBorders?: boolean }) => attributes.showBorders === false ? { 'data-show-borders': 'false' } : {},
+        },
+      },
+    }]
+  },
+})
+
 async function capture() {
   if (!editor.value || disposed) return
   try {
@@ -163,7 +175,8 @@ async function render(data: EditorData) {
   try {
     editor.value.commands.setContent(editorDataToHtml(editorPayload(data)), {
       emitUpdate: false,
-      errorOnInvalidContent: true,
+      // shortcut: Tiptap's HTML check rejects table tbody; remove this exception when its parser accepts it.
+      errorOnInvalidContent: !data.blocks.some((block) => block.type === 'table'),
     })
     error.value = ''
   } catch {
@@ -232,6 +245,7 @@ onMounted(() => {
       extensions: [
         StarterKit.configure({ blockquote: false, codeBlock: false, horizontalRule: false, strike: false }),
         TableKit.configure({ table: { resizable: true, allowTableNodeSelection: true } }),
+        TableBorders,
         DocumentImage,
         Highlight,
         TextAlign.configure({ types: ['paragraph', 'heading'], defaultAlignment: 'left' }),
@@ -366,6 +380,6 @@ onUnmounted(() => {
 :deep(.tiptap.resize-cursor th) { cursor: col-resize; }
 :deep(.tiptap td.selectedCell),
 :deep(.tiptap th.selectedCell) { background-color: #eaf1fd; }
-:deep(.tiptap .tableWrapper.table-lines-hidden th),
-:deep(.tiptap .tableWrapper.table-lines-hidden td) { border-color: transparent; }
+:deep(.tiptap table[data-show-borders="false"] th),
+:deep(.tiptap table[data-show-borders="false"] td) { border-color: transparent; }
 </style>

@@ -77,6 +77,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Verify the changed behavior with appropriate checks.
 - Report what changed, what was verified, and any remaining limitations.
 
+## 6. Document Editor Development
+
+For work on `/documents/{guid}/edit`, read `PRD-kop-footer-editor-frontend.md` and the backend's `PRD-editor-dokumen-backend.md` before changing the editor workflow. Confirm the backend API contract in code; a PRD proposal is not proof that an endpoint or field already exists.
+
+- Keep the document title, letterhead image, Tiptap body, and footer image as distinct UI sections. Letterhead and footer are optional draft data, not Tiptap body blocks. Users prepare their own images; do not add cropping. Enforce the agreed 1200 px maximum image width.
+- Treat the generated PDF preview as the source of truth for page count, page numbers, letterhead/footer placement, and signature positions. Do not infer final page boundaries from Tiptap height. Add an explicit page break control only when the backend accepts and renders that block.
+- Let letterhead and footer each target all pages or selected page ranges. Validate input visibly, preserve unsaved changes, and do not silently discard invalid or out-of-range selections.
+- Follow the existing draft revision, autosave, conversion polling, and preview invalidation flow. When backend processing finishes, update the editor or preview automatically; users should not need to click **Periksa status versi**. Never use a stale preview for signature placement or publishing.
+- Check editor content against what the backend can save and render. Complex tables, images inside cells, and imported layouts must produce a clear limitation/error until both sides support them. Do not present a Tiptap rendering as a guarantee of PDF fidelity.
+- Treat imported DOCX/PDF images as body content unless the backend explicitly identifies them as letterhead/footer candidates and the user confirms their use.
+- For this editor work, respect the user's request to avoid `git diff` and `npm run type-check` unless they ask for either. Do not add tests when the user has expressly excluded them for the task.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

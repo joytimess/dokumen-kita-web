@@ -44,6 +44,7 @@ export function editorPayload(data: EditorData): EditorData {
         type: block.type,
         data: {
           withHeadings: !!d.withHeadings,
+          showBorders: d.showBorders !== false,
           content: (d.content as unknown[][]).map((row) => row.map(clean)),
         },
       }
