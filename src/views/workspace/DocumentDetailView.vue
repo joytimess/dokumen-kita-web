@@ -28,19 +28,29 @@ const canRead = computed(
       ['ready', 'signed', 'revision_requested', 'rejected'].includes(assignment.value.status)),
 )
 let lastLoad = 0,
-  timer: ReturnType<typeof setInterval> | undefined
+  timer: ReturnType<typeof setInterval> | undefined, pollTimer: ReturnType<typeof setTimeout> | undefined, active = true, polls = 0
 async function load() {
   lastLoad = Date.now()
   const result = await run(() => documentsApi.detail(String(route.params.documentGuid)))
-  if (result) document.value = result
+  if (result && active) document.value = result
+  clearTimeout(pollTimer)
+  if (active && result?.current_version.status === 'finalizing' && !result.current_version.finalization_error_code && polls < 30)
+    pollTimer = setTimeout(() => { if (globalThis.document.visibilityState === 'visible') { polls++; void load() } }, 5000)
+}
+async function retryFinalization() {
+  if (!document.value) return
+  const result = await run(() => documentsApi.finalize(document.value!.current_version.guid))
+  if (result) { message.value = 'Permintaan penyusunan PDF final diterima.'; await load() }
 }
 function focus() {
   if (
     globalThis.document.visibilityState === 'visible' &&
     Date.now() - lastLoad >= 5000 &&
     !busy.value
-  )
+  ) {
+    polls = 0
     void load()
+  }
 }
 async function resend(a: Assignment) {
   if (
@@ -71,6 +81,8 @@ onMounted(() => {
   }, 1000)
 })
 onUnmounted(() => {
+  active = false
+  clearTimeout(pollTimer)
   clearInterval(timer)
   window.removeEventListener('focus', focus)
 })
@@ -102,9 +114,10 @@ onUnmounted(() => {
         v-if="document.current_version.status === 'finalizing'"
         class="mt-5 text-sm leading-relaxed"
       >
-        Semua persetujuan diterima. Hasil final belum tersedia; backend saat ini belum memiliki
-        proses pembentukan PDF final otomatis.
+        Semua persetujuan diterima. PDF final sedang disiapkan.
       </p>
+      <p v-if="owner && document.current_version.finalization_error_code" class="mt-3 text-sm text-error">Penyusunan PDF final gagal. Periksa status lalu coba lagi.</p>
+      <BaseButton v-if="owner && document.current_version.status === 'finalizing' && document.current_version.finalization_error_code" class="mt-3" :loading="busy" @click="retryFinalization">Coba susun PDF final lagi</BaseButton>
       <p v-if="assignment?.status === 'waiting'" class="mt-5 text-sm">
         Anda menunggu giliran. PDF dan posisi tanda tangan belum dibuka melalui hak penerima.
       </p>
@@ -137,8 +150,7 @@ onUnmounted(() => {
         "
         class="mt-5 text-sm text-muted"
       >
-        Pratinjau belum tersedia. Berkas sumber tidak otomatis menjadi snapshot; penempatan dan
-        publish menunggu snapshot backend yang valid.
+        Pratinjau terbaru belum tersedia. Buka draft untuk membuat pratinjau dari editor.
       </p>
       <RouterLink
         v-if="
@@ -177,7 +189,7 @@ onUnmounted(() => {
           v-if="
             owner &&
             document.current_version.status === 'in_progress' &&
-            ['ready', 'waiting'].includes(a.status)
+            a.status === 'ready'
           "
           class="min-h-11 text-xs text-primary underline disabled:opacity-40"
           :disabled="busy || remaining(a.guid) > 0"

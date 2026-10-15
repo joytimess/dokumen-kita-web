@@ -8,6 +8,7 @@ import type {
   Placeholder,
   SignatureAsset,
   SignaturePayload,
+  RevisionResult,
 } from '../types/documents'
 
 async function get<T>(path: string, params?: Record<string, string | number>) {
@@ -24,13 +25,33 @@ export const documentsApi = {
     get<Page<DocumentRecord>>('/documents', { page, per_page: 15, ...(status ? { status } : {}) }),
   detail: (guid: string) =>
     get<{ data: DocumentRecord }>(`/documents/${encodeURIComponent(guid)}`).then((r) => r.data),
+  version: (guid: string) =>
+    get<{ data: DocumentVersion }>(`/versions/${encodeURIComponent(guid)}`).then((r) => r.data),
   create: (title: string) => write<DocumentRecord>('/documents', { title }),
   save: (guid: string, payload: DraftPayload) =>
     write<DocumentVersion>(`/versions/${guid}`, payload, 'patch'),
-  import: (guid: string, file: File) => {
+  import: (guid: string, file: File, replace = false, revision?: number) => {
     const body = new FormData()
     body.append('file', file)
+    if (replace) {
+      body.append('replace_editor_data', '1')
+      body.append('editor_revision', String(revision))
+    }
     return write<DocumentVersion>(`/documents/${guid}/imports`, body)
+  },
+  retryConversion: (guid: string, replace = false, revision?: number) =>
+    write<DocumentVersion>(`/versions/${guid}/convert-import`, {
+      replace_editor_data: replace,
+      ...(replace ? { editor_revision: revision } : {}),
+    }),
+  preview: (guid: string) => write<DocumentVersion>(`/versions/${guid}/preview`, { source: 'editor' }),
+  finalize: (guid: string) => write<DocumentVersion>(`/versions/${guid}/finalize`, {}),
+  requestRevision: (guid: string, reason: string) =>
+    write<RevisionResult>(`/assignments/${guid}/revision-request`, { reason }),
+  async source(guid: string, signal?: AbortSignal) {
+    return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${guid}/source`, {
+      responseType: 'blob', signal,
+    })).data
   },
   signers: (guid: string, emails: string[]) =>
     write<DocumentVersion>(

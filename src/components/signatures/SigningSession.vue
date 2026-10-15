@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/auth'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { createSignatureAction } from '../../composables/useSignatureAction'
-import type { Assignment, Placeholder, SignatureAsset } from '../../types/documents'
+import type { Assignment, Placeholder, RevisionResult, SignatureAsset } from '../../types/documents'
 import PdfViewer from '../documents/PdfViewer.vue'
 import AssetLibrary from './AssetLibrary.vue'
 import BaseButton from '../ui/BaseButton.vue'
@@ -17,6 +17,7 @@ const props = defineProps<{
   expectedHash?: string | null
   owner?: boolean
   status: string
+  isCurrent?: boolean
   refresh?: () => Promise<void>
   contextComplete?: boolean
 }>()
@@ -32,6 +33,7 @@ const hash = ref(''),
   message = ref(''),
   blockedUntil = ref(0),
   clock = ref(Date.now())
+const revisionReason = ref(''), revisionBusy = ref(false), revisionResult = ref<RevisionResult>()
 const selected = ref<SignatureAsset>(),
   assetUrl = ref(''),
   dialog = ref<HTMLDialogElement>(),
@@ -54,8 +56,13 @@ const canSign = computed(
     !!props.assignment.placeholders?.length &&
     auth.user?.email_verified &&
     auth.user.guid === identity &&
+    props.isCurrent !== false &&
     props.status === 'in_progress',
 )
+const canRequestRevision = computed(() => props.assignment?.status === 'ready' &&
+  !!props.assignment.claimed_at && auth.user?.email_verified && auth.user.guid === identity &&
+  props.isCurrent !== false &&
+  props.status === 'in_progress')
 const overlays = computed<(Placeholder & { label: string; image?: string })[]>(() =>
   (props.assignment?.placeholders ?? []).map((p) => ({
     ...p,
@@ -190,6 +197,26 @@ async function submit() {
     readBusy.value = false
   }
 }
+async function requestRevision() {
+  const reason = revisionReason.value.trim()
+  if (!canRequestRevision.value || reason.length < 3 || reason.length > 1000 || revisionBusy.value || busy.value || readBusy.value || pending.value ||
+    !window.confirm('Versi ini akan dihentikan. Semua penerima harus membaca dan menandatangani ulang draft baru. Lanjutkan?')) return
+  revisionBusy.value = true
+  error.value = ''
+  try {
+    const result = await documentsApi.requestRevision(props.assignment!.guid, reason)
+    revisionResult.value = result
+    blocked.value = true
+    message.value = 'Permintaan revisi diterima. Versi ini tidak aktif lagi.'
+    await props.refresh?.()
+  } catch (cause) {
+    const feedback = workspaceError(cause)
+    error.value = feedback.message
+    if (feedback.status === 401) auth.user = null
+    else if ([403, 404, 409, 422].includes(feedback.status ?? 0)) await props.refresh?.()
+  }
+  finally { revisionBusy.value = false }
+}
 onUnmounted(() => {
   active = false
   clearInterval(timer)
@@ -210,10 +237,11 @@ onUnmounted(() => {
     />
     <section v-if="assignment" class="rounded-xl border border-line bg-white p-5">
       <h2 class="font-semibold">Persetujuan Anda</h2>
+      <div v-if="revisionResult" class="mt-3 text-sm"><p>Versi sebelumnya: {{ revisionResult.previous_status }}. Draft penerus: {{ revisionResult.draft_status }}.</p><RouterLink v-if="assignment.document_guid" :to="`/documents/${assignment.document_guid}`" class="mt-2 inline-block text-primary underline">Buka detail dokumen</RouterLink></div>
       <p v-if="completed || assignment.status === 'signed'" class="mt-3 text-sm">
         Tanda tangan telah diterima. Tindakan baru tidak tersedia untuk persetujuan ini.
       </p>
-      <template v-else-if="canSign"
+      <template v-else-if="canSign && !revisionResult"
         ><p class="my-3 text-sm text-muted">
           Kunjungi semua halaman yang berhasil dirender dan capai akhir dokumen. Pencarian atau
           lompat ke halaman terakhir saja tidak memenuhi syarat.
@@ -237,6 +265,12 @@ onUnmounted(() => {
           Coba kembali dalam {{ remaining }} detik.
         </p></template
       >
+      <div v-if="canRequestRevision && !revisionResult" class="mt-6 border-t border-line pt-5">
+        <h3 class="font-semibold">Minta revisi</h3>
+        <p class="my-2 text-xs text-muted">Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.</p>
+        <textarea v-model="revisionReason" minlength="3" maxlength="1000" class="min-h-28 w-full rounded border border-line p-3 text-sm" placeholder="Alasan revisi (3–1000 karakter)" />
+        <BaseButton class="mt-3" :loading="revisionBusy" :disabled="revisionReason.trim().length < 3 || busy || readBusy || !!pending" @click="requestRevision">Minta revisi</BaseButton>
+      </div>
       <p v-else-if="contextComplete === false" class="mt-3 text-sm text-muted">
         Metadata judul dan nomor versi belum tersedia dari respons klaim. Persetujuan memerlukan
         detail dokumen berizin yang lengkap; PDF tetap dapat dibaca.

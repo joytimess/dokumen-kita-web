@@ -13,6 +13,9 @@ export interface Placeholder {
 export interface Assignment {
   guid: string
   version_guid: string
+  document_guid?: string
+  document_title?: string
+  version_number?: number
   recipient_email: string
   sequence_number: number
   status: string
@@ -24,9 +27,20 @@ export interface Assignment {
 export interface DocumentVersion {
   guid: string
   document_guid: string
+  document_title?: string
+  is_current?: boolean
   version_number: number
   status: string
-  preview_status: string
+  preview_status: 'none' | 'queued' | 'ready' | 'stale' | 'failed'
+  preview_source?: 'editor' | 'upload' | null
+  preview_error_code?: string | null
+  finalization_error_code?: string | null
+  conversion_status?: 'none' | 'queued' | 'processing' | 'ready' | 'failed'
+  conversion_generation?: string | null
+  conversion_error_code?: string | null
+  conversion_warnings?: string[] | null
+  conversion_page_count?: number | null
+  editor_revision?: number
   content_hash?: string | null
   preview_page_count?: number | null
   assignments?: Assignment[]
@@ -64,6 +78,13 @@ export interface SignatureAsset {
 export interface DraftPayload {
   title?: string
   editor_data?: EditorData
+  editor_revision?: number
+}
+export interface RevisionResult {
+  previous_version_guid: string
+  previous_status: string
+  draft_version_guid: string
+  draft_status: string
 }
 export interface SignaturePayload {
   asset_guid: string

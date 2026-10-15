@@ -16,8 +16,6 @@ const router = useRouter()
 const route = useRoute()
 const destination = computed(() => pendingInvitation() ? '/invitations/claim' : workspaceDestination(route.query.redirect))
 const loading = ref(true)
-const logoutBusy = ref(false)
-const logoutError = ref('')
 const confirmed = computed(
   () => !loading.value && !auth.sessionError && auth.user?.email_verified === true,
 )
@@ -34,19 +32,6 @@ async function load(force = false) {
   else await auth.restore()
   loading.value = false
   redirect()
-}
-async function logout() {
-  if (logoutBusy.value) return
-  logoutBusy.value = true
-  logoutError.value = ''
-  try {
-    await auth.logout()
-    await router.replace('/login')
-  } catch {
-    logoutError.value = 'Belum dapat keluar. Coba lagi.'
-  } finally {
-    logoutBusy.value = false
-  }
 }
 onMounted(() => load())
 </script>
@@ -127,7 +112,6 @@ onMounted(() => load())
         Belum menerima email? Periksa folder spam atau kirim ulang email verifikasi.
       </p>
       <EmailVerificationActions watch-focus />
-      <FeedbackMessage :message="logoutError" error />
     </template>
   </AuthLayout>
 </template>

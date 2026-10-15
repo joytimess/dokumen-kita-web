@@ -21,31 +21,6 @@ function listItems(items: unknown[], depth = 1): unknown[] {
         : clean((item as { content: unknown }).content),
   )
 }
-// List 2 requires metadata on every item; the backend deliberately strips it.
-export function editorDisplayData(data: EditorData): EditorData {
-  const cleanData = editorPayload(data)
-  function displayItems(items: unknown[]): unknown[] {
-    return items.map((item) =>
-      typeof item === 'string'
-        ? { content: item, meta: {}, items: [] }
-        : {
-            ...(item as Record<string, unknown>),
-            meta: {},
-            items: displayItems((item as { items: unknown[] }).items),
-          },
-    )
-  }
-  return {
-    blocks: cleanData.blocks.map((block) =>
-      block.type === 'list'
-        ? {
-            type: block.type,
-            data: { ...block.data, meta: {}, items: displayItems(block.data.items as unknown[]) },
-          }
-        : block,
-    ),
-  }
-}
 export function editorPayload(data: EditorData): EditorData {
   if (data.blocks.length > 500) throw new Error('Dokumen maksimal 500 blok.')
   const blocks = data.blocks.map((block) => {

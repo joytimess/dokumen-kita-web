@@ -11,12 +11,15 @@ import {
   validSigners,
   areasReviewed,
   ownAssignment,
+  expectedConversion,
+  remoteVersionConflict,
+  conversionFailure,
 } from '../src/utils/documents'
 import { documentsApi } from '../src/services/documents.service'
 import { http } from '../src/services/http'
 import { workspaceError } from '../src/services/workspace.errors'
 import { findTextMatches } from '../src/utils/pdfSearch'
-import type { Assignment, DocumentRecord } from '../src/types/documents'
+import type { Assignment, DocumentRecord, DocumentVersion } from '../src/types/documents'
 
 vi.mock('../src/services/http', async (original) => ({
   ...(await original<typeof import('../src/services/http')>()),
@@ -48,6 +51,21 @@ function failure(status: number, code = '', headers = {}) {
 }
 
 describe('Autosave serial', () => {
+  it('menolak revisi tab lain, tetapi menerima hasil konversi generasi aktif hanya saat lokal bersih', () => {
+    const old = { guid: 'v', status: 'draft', editor_revision: 3, conversion_status: 'processing', conversion_generation: 'g1', preview_status: 'stale' } as DocumentVersion
+    const converted = { ...old, editor_revision: 4, conversion_status: 'ready' } as DocumentVersion
+    expect(expectedConversion(old, converted)).toBe(true)
+    expect(remoteVersionConflict(old, converted, false, false, false)).toBe(false)
+    expect(remoteVersionConflict(old, converted, true, false, false)).toBe(true)
+    expect(remoteVersionConflict(old, converted, false, true, false)).toBe(true)
+    expect(remoteVersionConflict(old, { ...converted, conversion_generation: 'g2' }, false, false, false)).toBe(true)
+    expect(remoteVersionConflict(old, { ...old, editor_revision: 4 }, false, false, false)).toBe(true)
+    expect(remoteVersionConflict(old, { ...old, is_current: false }, false, false, false)).toBe(true)
+  })
+  it('menjelaskan PDF scan tanpa menampilkan kode atau detail backend', () => {
+    expect(conversionFailure('PDF_TEXT_LAYER_MISSING')).toContain('OCR')
+    expect(conversionFailure('UNKNOWN_INTERNAL')).not.toContain('UNKNOWN_INTERNAL')
+  })
   it('tidak save baseline dan menggabungkan perubahan selama 1000 ms', async () => {
     vi.useFakeTimers()
     const save = vi.fn(async () => {})
@@ -255,6 +273,25 @@ describe('Tanda tangan idempoten', () => {
 })
 
 describe('Adapter workspace dan kegagalan', () => {
+  it('mengirim revisi editor, opsi penggantian impor, preview editor, dan alasan revisi sesuai kontrak', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
+    const calls: InternalAxiosRequestConfig[] = []
+    http.defaults.adapter = async (config) => {
+      calls.push(config)
+      return { config, status: 202, data: { data: { guid: 'v' } }, statusText: 'Accepted', headers: new AxiosHeaders() }
+    }
+    await documentsApi.save('v', { editor_data: { blocks: [] }, editor_revision: 4 })
+    await documentsApi.import('d', new File(['pdf'], 'test.pdf'), true, 5)
+    await documentsApi.preview('v')
+    await documentsApi.requestRevision('a', 'Perbaiki isi dokumen')
+    const mutations = calls.filter((call) => call.method !== 'get')
+    expect(JSON.parse(mutations[0]!.data)).toMatchObject({ editor_revision: 4 })
+    expect(mutations[1]!.data).toBeInstanceOf(FormData)
+    expect((mutations[1]!.data as FormData).get('replace_editor_data')).toBe('1')
+    expect((mutations[1]!.data as FormData).get('editor_revision')).toBe('5')
+    expect(JSON.parse(mutations[2]!.data)).toEqual({ source: 'editor' })
+    expect(JSON.parse(mutations[3]!.data)).toEqual({ reason: 'Perbaiki isi dokumen' })
+  })
   it('menggunakan PATCH/PUT multipart dan CSRF terbatas tanpa retry jaringan', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
     const calls: InternalAxiosRequestConfig[] = []

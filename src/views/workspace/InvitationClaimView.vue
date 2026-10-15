@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { documentsApi } from '../../services/documents.service'
 import { pendingInvitation, clearInvitation } from '../../utils/invitation'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import type { Assignment } from '../../types/documents'
-import SigningSession from '../../components/signatures/SigningSession.vue'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
 const token = ref(pendingInvitation()),
   assignment = ref<Assignment>()
+const router = useRouter()
 const { busy, error, run } = useWorkspaceRequest()
 async function claim() {
   if (!token.value || assignment.value) return
@@ -18,6 +19,7 @@ async function claim() {
     assignment.value = result
     clearInvitation()
     token.value = ''
+    if (result.document_guid) await router.replace(`/documents/${result.document_guid}/versions/${result.version_guid}/view`)
   }
 }
 </script>
@@ -32,9 +34,7 @@ async function claim() {
   <FeedbackMessage :message="error" error />
   <section v-if="!assignment" class="max-w-2xl rounded-xl border border-line bg-white p-6">
     <p v-if="!token" class="text-sm text-muted">
-      Buka tautan undangan asli dari email. Konteks undangan yang sudah diklaim tidak
-      dipersistenkan. Backend belum menyediakan GUID dokumen atau endpoint untuk memulihkan detail
-      dari assignment setelah refresh.
+      Buka tautan undangan asli dari email untuk mengklaim dokumen.
     </p>
     <template v-else
       ><p class="mb-5 text-sm">
@@ -53,23 +53,8 @@ async function claim() {
       class="max-w-2xl rounded-xl border border-line bg-white p-6"
     >
       <p class="text-sm">Menunggu giliran. PDF dan placeholder tidak dimuat.</p>
-      <p class="mt-3 text-xs text-muted">
-        Pemeriksaan status setelah klaim terblokir kontrak: respons tidak memuat GUID dokumen dan
-        belum ada endpoint detail assignment. Buka ulang tautan undangan asli untuk melakukan klaim
-        idempoten dan memeriksa giliran selama undangan aktif.
-      </p>
+      <RouterLink v-if="assignment.document_guid" :to="`/documents/${assignment.document_guid}/versions/${assignment.version_guid}/view`" class="mt-3 inline-block text-primary underline">Periksa status versi</RouterLink>
     </div>
-    <SigningSession
-      v-else-if="assignment.status === 'ready'"
-      :version-guid="assignment.version_guid"
-      title="Dokumen undangan"
-      :context-complete="false"
-      :assignment="assignment"
-      status="in_progress"
-    />
-    <p class="mt-5 text-xs text-muted">
-      Judul, nomor versi, dan navigasi detail belum tersedia pada respons klaim. Data tersebut tidak
-      ditebak dari token. Simpan tautan asli di email untuk membuka undangan kembali.
-    </p></template
+    <RouterLink v-else-if="assignment.document_guid" :to="`/documents/${assignment.document_guid}/versions/${assignment.version_guid}/view`" class="text-primary underline">Buka dokumen</RouterLink></template
   >
 </template>

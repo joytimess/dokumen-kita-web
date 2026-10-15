@@ -24,7 +24,7 @@ const verification = createEmailVerification(auth, {
     })
   },
 })
-const { remaining, sending, checking, message, failed } = verification
+const { remaining, sending, message, failed } = verification
 let timer: ReturnType<typeof setInterval> | undefined
 function onReturn() {
   if (props.watchFocus && document.visibilityState === 'visible') void verification.check(true)

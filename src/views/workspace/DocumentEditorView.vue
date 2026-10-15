@@ -6,8 +6,8 @@ import { workspaceError } from '../../services/workspace.errors'
 import { createAutosave } from '../../composables/useAutosave'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { useAuthStore } from '../../stores/auth'
-import type { DocumentRecord, DraftPayload, EditorData, Assignment } from '../../types/documents'
-import { areasReviewed, snapshotReady, dateLabel } from '../../utils/documents'
+import type { DocumentRecord, DocumentVersion, DraftPayload, EditorData, Assignment } from '../../types/documents'
+import { areasReviewed, snapshotReady, dateLabel, expectedConversion, remoteVersionConflict, conversionFailure } from '../../utils/documents'
 import NativeEditor from '../../components/documents/NativeEditor.vue'
 import SignersForm from '../../components/documents/SignersForm.vue'
 import PlaceholderPanel from '../../components/documents/PlaceholderPanel.vue'
@@ -34,9 +34,14 @@ const stage = ref(0),
   locked = ref(false),
   message = ref(''),
   importUncertain = ref(false)
+const sourceUrl = ref(''), sourceBusy = ref(false), pollCount = ref(0)
+const serverVersion = shallowRef<DocumentVersion>()
 const { busy, error, fields, run } = useWorkspaceRequest()
 let savedContent = '',
   active = true
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+let sourceController: AbortController | undefined
+let pollEpoch = 0
 let saveBlockedUntil = 0
 const dirty = computed(
   () =>
@@ -47,12 +52,15 @@ const editable = computed(
     !!document.value &&
     document.value.owner_guid === identity &&
     document.value.current_version.status === 'draft' &&
+    document.value.current_version.is_current !== false &&
     !locked.value,
 )
 const preview = computed(
   () =>
     !!document.value &&
     snapshotReady(document.value) &&
+    document.value.current_version.preview_source === 'editor' &&
+    !['queued', 'processing', 'failed'].includes(document.value.current_version.conversion_status ?? 'none') &&
     !saver.value?.dirty.value &&
     !pendingEditor.value,
 )
@@ -62,15 +70,20 @@ const canPublish = computed(
     preview.value &&
     reviewed.value &&
     !dirty.value &&
+    !saver.value?.saving.value &&
     areasReviewed(
       document.value!.current_version.assignments ?? [],
       document.value!.current_version.preview_page_count!,
     ),
 )
 async function load() {
-  const result = await run(() => documentsApi.detail(guid))
+  const result = await run(async () => {
+    const record = await documentsApi.detail(guid)
+    return { ...record, current_version: await documentsApi.version(record.current_version.guid) }
+  })
   if (!result) return
   document.value = result
+  serverVersion.value = undefined
   title.value = result.title
   content.value = result.current_version.editor_data ?? { blocks: [] }
   savedContent = JSON.stringify(content.value)
@@ -84,9 +97,13 @@ async function load() {
       if (Date.now() < saveBlockedUntil) throw new Error('RATE_LIMITED')
       const changes: DraftPayload = { title: payload.title }
       const contentChanged = JSON.stringify(payload.editor_data) !== savedContent
-      if (contentChanged) changes.editor_data = payload.editor_data
+      if (contentChanged) {
+        changes.editor_data = payload.editor_data
+        changes.editor_revision = document.value!.current_version.editor_revision
+      }
       const version = await documentsApi.save(versionGuid, changes)
       if (!active || auth.user?.guid !== identity) throw new Error('SESSION_CHANGED')
+      if (document.value?.current_version.guid !== versionGuid) throw new Error('VERSION_CHANGED')
       document.value!.current_version = {
         ...document.value!.current_version,
         ...version,
@@ -123,13 +140,18 @@ async function load() {
         }
         if ([401, 403, 409].includes(feedback.status ?? 0)) {
           locked.value = true
+          saver.value?.stop()
+          void editor.value?.capture().then((data) => { if (data) content.value = data })
           void editor.value?.lock()
           if (feedback.status === 401) auth.user = null
           else
             void documentsApi
-              .detail(guid)
+              .version(versionGuid)
               .then((fresh) => {
-                if (active) document.value = fresh
+                if (active && document.value?.current_version.guid === versionGuid) {
+                  serverVersion.value = fresh
+                  document.value.current_version = fresh
+                }
               })
               .catch(() => {})
           return true
@@ -137,6 +159,54 @@ async function load() {
       },
     },
   )
+  schedulePoll()
+}
+function applyVersion(version: DocumentVersion) {
+  if (!active || !document.value || document.value.current_version.guid !== version.guid) return
+  const old = document.value.current_version
+  const revisionChanged = version.editor_revision !== old.editor_revision
+  const conversionFinished = expectedConversion(old, version)
+  if (remoteVersionConflict(old, version, dirty.value, !!saver.value?.saving.value, extraDirty.value)) {
+    locked.value = true
+    saver.value?.stop()
+    serverVersion.value = version
+    reviewed.value = false
+    error.value = 'Versi server berubah. Perubahan lokal dipertahankan; tinjau dan salin sebelum memuat ulang.'
+    void editor.value?.capture().then((data) => { if (data) content.value = data })
+    void editor.value?.lock()
+    document.value.current_version = { ...version, assignments: version.assignments ?? old.assignments }
+    return
+  }
+  if (old.conversion_generation !== version.conversion_generation || old.has_source !== version.has_source)
+    clearSource()
+  document.value.current_version = { ...version, assignments: version.assignments ?? old.assignments }
+  if (conversionFinished && revisionChanged && version.editor_data) {
+    content.value = version.editor_data
+    savedContent = JSON.stringify(version.editor_data)
+    saver.value?.dispose()
+    saver.value = undefined
+    void editor.value?.render(version.editor_data)
+    void load()
+  }
+}
+function schedulePoll() {
+  clearTimeout(pollTimer)
+  if (!active || !document.value || globalThis.document.visibilityState !== 'visible') return
+  const version = document.value.current_version
+  if (!['queued', 'processing'].includes(version.conversion_status ?? '') && version.preview_status !== 'queued') return
+  if (pollCount.value >= 30) return
+  const epoch = pollEpoch
+  pollTimer = setTimeout(async () => {
+    const guid = version.guid
+    if (saver.value?.saving.value) { schedulePoll(); return }
+    try {
+      const fresh = await documentsApi.version(guid)
+      if (!active || pollEpoch !== epoch || document.value?.current_version.guid !== guid) return
+      pollCount.value++
+      applyVersion(fresh)
+      schedulePoll()
+    } catch { error.value = 'Status belum dapat diperiksa. Gunakan Periksa status untuk mencoba lagi.' }
+  }, 3000)
 }
 function changed(data: EditorData) {
   pendingEditor.value = false
@@ -160,8 +230,13 @@ async function flush() {
   return saver.value.flush()
 }
 async function refreshMetadata() {
-  const result = await run(() => documentsApi.detail(guid))
-  if (result) document.value = result
+  const versionGuid = document.value?.current_version.guid
+  if (!versionGuid) return
+  if (saver.value?.saving.value) await saver.value.flush()
+  const result = await run(() => documentsApi.version(versionGuid))
+  if (result) applyVersion(result)
+  pollCount.value = 0
+  schedulePoll()
 }
 async function switchStage(next: number) {
   if (next === stage.value || !(await flush())) return
@@ -178,6 +253,7 @@ async function upload(event: Event) {
     file = input.files?.[0]
   input.value = ''
   if (!file || importUncertain.value) return
+  clearSource()
   if (!/\.(pdf|docx)$/i.test(file.name) || file.size > 20480 * 1024) {
     error.value = 'Pilih PDF/DOCX maksimal 20.480 KB.'
     return
@@ -188,9 +264,13 @@ async function upload(event: Event) {
   )
     return
   if (!(await flush())) return
+  const replace = !!content.value.blocks.length
+  if (replace && !window.confirm('Hasil konversi akan mengganti isi editor. Lanjutkan?')) return
+  pollEpoch++
+  clearTimeout(pollTimer)
   const result = await run(async () => {
     try {
-      return await documentsApi.import(guid, file)
+      return await documentsApi.import(guid, file, replace, document.value?.current_version.editor_revision)
     } catch (cause) {
       if (workspaceError(cause).ambiguous) importUncertain.value = true
       throw cause
@@ -199,9 +279,49 @@ async function upload(event: Event) {
   reviewed.value = false
   if (result) {
     await refreshMetadata()
-    message.value =
-      'Sumber tersimpan. Berkas belum dikonversi menjadi isi editor atau snapshot preview.'
+    message.value = 'Dokumen sedang dikonversi. Isi editor akan tersedia setelah proses selesai.'
   } else if (importUncertain.value) await refreshMetadata()
+}
+async function retryConversion() {
+  if (!(await flush())) return
+  const replace = !!content.value.blocks.length
+  if (replace && !window.confirm('Hasil konversi akan mengganti isi editor. Lanjutkan?')) return
+  pollEpoch++
+  clearTimeout(pollTimer)
+  const result = await run(() => documentsApi.retryConversion(document.value!.current_version.guid, replace, document.value?.current_version.editor_revision))
+  if (result) { applyVersion(result); pollCount.value = 0; schedulePoll() }
+}
+async function makePreview() {
+  if (!(await flush())) return
+  pollEpoch++
+  clearTimeout(pollTimer)
+  const result = await run(() => documentsApi.preview(document.value!.current_version.guid))
+  if (result) { applyVersion(result); reviewed.value = false; pollCount.value = 0; schedulePoll() }
+}
+function clearSource() {
+  sourceController?.abort()
+  if (sourceUrl.value) URL.revokeObjectURL(sourceUrl.value)
+  sourceUrl.value = ''
+}
+async function openSource() {
+  clearSource()
+  const controller = new AbortController()
+  sourceController = controller
+  sourceBusy.value = true
+  try {
+    const version = document.value!.current_version
+    const blob = await documentsApi.source(version.guid, controller.signal)
+    if (!active || controller.signal.aborted || document.value?.current_version.guid !== version.guid) return
+    const url = URL.createObjectURL(blob)
+    if (version.source_type === 'docx') {
+      const link = globalThis.document.createElement('a')
+      link.href = url
+      link.download = `${version.guid}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+    } else sourceUrl.value = url
+  } catch (cause) { if (!controller.signal.aborted) error.value = workspaceError(cause).message }
+  finally { sourceBusy.value = false }
 }
 async function publish() {
   if (!canPublish.value || !(await flush())) return
@@ -248,33 +368,10 @@ async function onFocus() {
   )
     return
   try {
-    const fresh = await documentsApi.detail(guid)
+    const fresh = await documentsApi.version(document.value.current_version.guid)
     if (!active) return
-    if (
-      fresh.current_version.status !== 'draft' ||
-      fresh.current_version.guid !== document.value.current_version.guid ||
-      JSON.stringify(fresh.current_version.editor_data) !== savedContent
-    ) {
-      locked.value = true
-      saver.value?.stop()
-      await editor.value?.lock()
-      reviewed.value = false
-      error.value =
-        'Dokumen berubah di luar halaman ini. Perubahan lokal dipertahankan; muat ulang setelah meninjaunya.'
-      document.value = fresh
-    } else if (
-      fresh.current_version.content_hash !== document.value.current_version.content_hash ||
-      fresh.current_version.preview_status !== document.value.current_version.preview_status
-    ) {
-      reviewed.value = false
-      if (!extraDirty.value) document.value = fresh
-      else {
-        locked.value = true
-        saver.value?.stop()
-        error.value =
-          'Snapshot berubah di luar halaman ini. Perubahan posisi lokal dipertahankan; muat ulang setelah meninjaunya.'
-      }
-    }
+    applyVersion(fresh)
+    schedulePoll()
   } catch {
     /* A failed focus check never overwrites local work. */
   }
@@ -286,6 +383,9 @@ watch(
       saver.value?.dispose()
       content.value = { blocks: [] }
       document.value = undefined
+      clearTimeout(pollTimer)
+      pollEpoch++
+      clearSource()
       void editor.value?.lock()
     }
   },
@@ -309,6 +409,9 @@ onUnmounted(() => {
   if (beforeLogout) beforeLogout.value = null
   active = false
   saver.value?.dispose()
+  clearTimeout(pollTimer)
+  pollEpoch++
+  clearSource()
   window.removeEventListener('beforeunload', beforeUnload)
   window.removeEventListener('focus', onFocus)
 })
@@ -340,6 +443,7 @@ onUnmounted(() => {
     </div>
   </div>
   <FeedbackMessage :message="error || editorError" error /><FeedbackMessage :message="message" />
+  <button v-if="document" class="mb-4 min-h-11 text-xs text-primary underline" :disabled="busy" @click="refreshMetadata">Periksa status versi</button>
   <p v-for="(text, key) in fields" :key="key" class="mb-2 text-sm text-error">{{ text }}</p>
   <p v-if="busy && !document" role="status">Memuat draft…</p>
   <button v-if="error && !document" class="min-h-11 text-primary underline" @click="load">
@@ -355,6 +459,10 @@ onUnmounted(() => {
       <button class="mt-3 min-h-11 text-primary underline" @click="router.go(0)">
         Muat ulang versi server
       </button>
+      <p v-if="locked && dirty" class="mt-4 text-xs text-muted">Salin perubahan lokal di bawah sebelum memuat ulang. Tidak ada pengiriman ulang otomatis.</p>
+      <textarea v-if="locked && dirty" readonly :value="JSON.stringify(content, null, 2)" aria-label="Salinan perubahan editor lokal" class="mt-2 h-48 w-full rounded border border-line p-3 font-mono text-xs" />
+      <details v-if="locked && serverVersion?.editor_data" class="mt-4 text-sm"><summary class="cursor-pointer text-primary">Bandingkan isi versi server</summary><textarea readonly :value="JSON.stringify(serverVersion.editor_data, null, 2)" aria-label="Isi editor versi server" class="mt-2 h-48 w-full rounded border border-line p-3 font-mono text-xs" /></details>
+      <RouterLink v-if="document.current_version.is_current === false" :to="`/documents/${guid}`" class="mt-3 block text-sm text-primary underline">Buka draft terkini</RouterLink>
     </div>
     <div :class="!editable ? 'pointer-events-none opacity-60' : ''">
       <nav class="mb-6 flex flex-wrap gap-2" aria-label="Tahap penyusunan">
@@ -385,8 +493,10 @@ onUnmounted(() => {
             @input="titleChanged" /></label
         ><NativeEditor
           v-if="saver"
+          :key="document.current_version.conversion_status"
           ref="editor"
           :data="content"
+          :readonly="['queued', 'processing'].includes(document.current_version.conversion_status ?? '')"
           @pending="pendingEditor = true"
           @change="changed"
           @invalid="editorError = $event"
@@ -394,9 +504,14 @@ onUnmounted(() => {
         <div class="rounded-xl border border-line bg-white p-5">
           <h2 class="font-semibold">Sumber PDF / DOCX</h2>
           <p class="my-3 text-sm text-muted">
-            Berkas sumber disimpan privat. Impor belum dikonversi menjadi isi editable dan belum
-            membuat snapshot.
+            Berkas sumber disimpan privat. Hasil konversi dapat mengubah tata letak; periksa tabel,
+            grafik, dan gambar sebelum mengirim.
           </p>
+          <p v-if="['queued', 'processing'].includes(document.current_version.conversion_status ?? '')" role="status" class="mb-3 text-sm">Dokumen sedang dikonversi ({{ document.current_version.conversion_status }}).</p>
+          <p v-if="pollCount >= 30 && ['queued', 'processing'].includes(document.current_version.conversion_status ?? '')" class="mb-3 text-sm text-muted">Pemeriksaan otomatis berhenti. Tekan “Periksa status versi” di atas untuk melanjutkan.</p>
+          <p v-if="document.current_version.conversion_status === 'failed'" class="mb-3 text-sm text-error">{{ conversionFailure(document.current_version.conversion_error_code) }}</p>
+          <p v-if="document.current_version.conversion_status === 'ready'" class="mb-3 text-sm">Konversi siap · {{ document.current_version.conversion_page_count ?? '—' }} halaman. Periksa hasil editor.</p>
+          <p v-for="warning in document.current_version.conversion_warnings" :key="warning" class="mb-2 text-xs text-muted">{{ warning.includes('SKIPPED') || warning.includes('EXCEEDED') ? 'Sebagian gambar dilewati karena batas editor.' : warning.includes('TABLE') || warning.includes('GRAPHICS') ? 'Tabel dan grafik perlu diperiksa.' : warning.includes('IMAGE') ? 'Posisi gambar perlu diperiksa.' : 'Tata letak mungkin berubah; periksa hasil edit.' }}</p>
           <p v-if="document.current_version.has_source" class="mb-3 text-xs">
             Sumber tersimpan: {{ document.current_version.source_type }}
           </p>
@@ -417,6 +532,9 @@ onUnmounted(() => {
             Hasil upload belum pasti. Detail sudah diperiksa ulang; tinjau metadata dan muat ulang
             sebelum mengunggah lagi.
           </p>
+          <button v-if="document.current_version.conversion_status === 'failed'" class="ml-3 min-h-11 text-sm text-primary underline" :disabled="busy" @click="retryConversion">Coba konversi lagi</button>
+          <button v-if="document.current_version.has_source" class="ml-3 min-h-11 text-sm text-primary underline" :disabled="sourceBusy" @click="openSource">{{ document.current_version.source_type === 'docx' ? 'Unduh sumber DOCX' : 'Lihat PDF asli' }}</button>
+          <div v-if="sourceUrl" class="mt-4"><button class="mb-2 text-xs text-primary underline" @click="clearSource">Tutup sumber asli</button><iframe :src="sourceUrl" title="PDF sumber asli" class="h-[65vh] w-full rounded border border-line" /></div>
         </div>
       </section>
       <SignersForm
@@ -441,10 +559,13 @@ onUnmounted(() => {
         />
         <div v-else class="rounded-xl border border-line bg-white p-6">
           <h2 class="font-semibold">Penempatan belum dapat dilanjutkan.</h2>
+          <p v-if="document.current_version.preview_status === 'queued'" role="status" class="mt-3 text-sm">Pratinjau sedang dibuat.</p>
+          <p v-if="pollCount >= 30 && document.current_version.preview_status === 'queued'" class="mt-3 text-sm text-muted">Pemeriksaan otomatis berhenti. Tekan “Periksa status versi” di atas untuk melanjutkan.</p>
+          <p v-if="document.current_version.preview_status === 'failed'" class="mt-3 text-sm text-error">Pembuatan pratinjau gagal. Periksa status lalu coba lagi.</p>
           <p class="mt-3 text-sm text-muted">
-            Simpan penerima dan gunakan snapshot preview valid dari backend. Upload sumber tidak
-            membuat preview; renderer belum tersedia.
+            Simpan isi dan penerima, lalu buat pratinjau dari editor terbaru.
           </p>
+          <BaseButton class="mt-4" :disabled="busy || dirty || ['queued', 'processing', 'failed'].includes(document.current_version.conversion_status ?? '')" @click="makePreview">{{ document.current_version.preview_status === 'queued' ? 'Periksa pratinjau' : 'Buat pratinjau terbaru' }}</BaseButton>
         </div></template
       >
       <section v-if="stage === 3" class="rounded-xl border border-line bg-white p-5 sm:p-8">
@@ -464,6 +585,7 @@ onUnmounted(() => {
           Kirim tersedia setelah isi tersimpan, snapshot siap, semua penerima memiliki area valid
           yang tersimpan, dan posisi telah ditinjau pada tahap sebelumnya.
         </p>
+        <BaseButton class="mr-3" :disabled="busy || dirty || ['queued', 'processing', 'failed'].includes(document.current_version.conversion_status ?? '')" @click="makePreview">Buat pratinjau terbaru</BaseButton>
         <BaseButton :disabled="!canPublish || busy" :loading="busy" @click="publish"
           >Kirim untuk tanda tangan</BaseButton
         >
