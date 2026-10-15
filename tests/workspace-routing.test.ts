@@ -37,12 +37,19 @@ describe('Routing workspace dan regresi autentikasi', () => {
     expect(router.resolve('/documents/new').meta.workspace).toBe(true)
     expect(router.resolve('/invitations/claim').meta.invitation).toBe(true)
   })
-  it('sesi valid pada landing/login menuju dashboard', async () => {
+  it('landing tetap terbuka dengan sesi valid, login menuju dashboard', async () => {
     useAuthStore().setUser(user)
     await router.push('/login')
     expect(router.currentRoute.value.path).toBe('/dashboard')
     await router.push('/')
-    expect(router.currentRoute.value.path).toBe('/dashboard')
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+  it('landing dapat dibuka tanpa sesi meski pemeriksaan sesi gagal', async () => {
+    await router.push('/forgot-password')
+    const checkSession = vi.spyOn(authApi, 'me').mockRejectedValue(new Error('offline'))
+    await router.push('/')
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(checkSession).not.toHaveBeenCalled()
   })
   it('sesi valid tidak membelokkan halaman recovery', async () => {
     useAuthStore().setUser(user)

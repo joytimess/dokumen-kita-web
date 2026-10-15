@@ -112,7 +112,7 @@ router.beforeEach(async (to) => {
     return { path: '/invitations/claim', query: valid ? {} : { error: 'invalid' }, replace: true }
   }
   if (authMode !== 'api') return
-  const common = ['/', '/login', '/register'].includes(to.path)
+  const common = ['/login', '/register'].includes(to.path)
   if (!to.meta.workspace && !common) return
   const auth = useAuthStore()
   await auth.restore()

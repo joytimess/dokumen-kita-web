@@ -54,8 +54,14 @@ const features = [
       <div
         class="order-4 flex w-full items-center justify-between gap-4 pt-1 text-[13px] [&_a:first-child]:flex [&_a:first-child]:min-h-11 [&_a:first-child]:items-center sm:order-none sm:w-auto sm:justify-start sm:pt-0 md:gap-[22px]"
       >
-        <RouterLink to="/login">Masuk</RouterLink
+        <RouterLink
+          v-if="auth.user"
+          class="inline-flex min-h-11 items-center justify-center rounded-[7px] border border-primary bg-primary px-[18px] py-2.5 text-center text-sm font-semibold text-white! hover:bg-[#174c39] hover:no-underline!"
+          to="/dashboard"
+          >Dashboard</RouterLink
+        ><RouterLink v-if="!auth.user" to="/login">Masuk</RouterLink
         ><RouterLink
+          v-if="!auth.user"
           class="inline-flex min-h-12 items-center justify-center gap-5 rounded-[7px] border border-primary bg-primary px-6 py-3 text-center text-sm font-semibold leading-normal text-white! hover:bg-[#174c39] hover:no-underline! disabled:cursor-wait disabled:opacity-65 min-h-11! px-[18px]! py-2.5!"
           to="/register"
           >Mulai sekarang <span aria-hidden="true">↗</span></RouterLink

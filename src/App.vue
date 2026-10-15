@@ -10,7 +10,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const sessionBlocked = computed(
-  () => auth.sessionError && ['/', '/login', '/register'].includes(route.path),
+  () => auth.sessionError && ['/login', '/register'].includes(route.path),
 )
 async function retrySession() {
   await auth.refresh()
