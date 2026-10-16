@@ -9,6 +9,7 @@ import type {
   SignatureAsset,
   SignaturePayload,
   RevisionResult,
+  DecorationPages,
 } from '../types/documents'
 
 async function get<T>(path: string, params?: Record<string, string | number>) {
@@ -30,6 +31,27 @@ export const documentsApi = {
   create: (title: string) => write<DocumentRecord>('/documents', { title }),
   save: (guid: string, payload: DraftPayload) =>
     write<DocumentVersion>(`/versions/${guid}`, payload, 'patch'),
+  decoration: (guid: string, kind: 'letterhead' | 'footer', revision: number, pages: DecorationPages, file?: File) => {
+    if (file) {
+      const body = new FormData()
+      body.append('editor_revision', String(revision))
+      body.append('file', file)
+      body.append('pages[mode]', pages.mode)
+      if (pages.mode === 'range') pages.ranges.forEach(([start, end], index) => {
+        body.append(`pages[ranges][${index}][0]`, String(start))
+        body.append(`pages[ranges][${index}][1]`, String(end))
+      })
+      return write<DocumentVersion>(`/versions/${guid}/decorations/${kind}`, body)
+    }
+    return write<DocumentVersion>(`/versions/${guid}/decorations/${kind}`, { editor_revision: revision, pages }, 'patch')
+  },
+  deleteDecoration: async (guid: string, kind: 'letterhead' | 'footer', revision: number) => {
+    await csrf()
+    return (await http.delete<{ data: DocumentVersion }>(`${apiOrigin()}/api/v1/versions/${guid}/decorations/${kind}`, { data: { editor_revision: revision } })).data.data
+  },
+  async decorationImage(guid: string, kind: 'letterhead' | 'footer', signal?: AbortSignal) {
+    return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${guid}/decorations/${kind}/image`, { responseType: 'blob', signal })).data
+  },
   import: (guid: string, file: File, replace = false, revision?: number) => {
     const body = new FormData()
     body.append('file', file)

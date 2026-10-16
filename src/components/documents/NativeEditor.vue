@@ -6,7 +6,8 @@ import { TableKit } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
-import { NodeSelection } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorData } from '../../types/documents'
 import { editorPayload } from '../../utils/editor'
 import { editorDataToHtml, tiptapToEditorData, type TiptapNode } from '../../utils/tiptap'
@@ -158,6 +159,75 @@ const TableBorders = Extension.create({
   },
 })
 
+const paperHeight = 1123
+const paperGap = 24
+const paperPadding = 72
+const paperStride = paperHeight + paperGap
+const paperPagesKey = new PluginKey<DecorationSet>('paperPages')
+const PaperPages = Extension.create({
+  name: 'paperPages',
+  addProseMirrorPlugins() {
+    return [new Plugin<DecorationSet>({
+      key: paperPagesKey,
+      state: {
+        init: () => DecorationSet.empty,
+        apply(transaction, decorations) {
+          return transaction.getMeta(paperPagesKey) ?? decorations.map(transaction.mapping, transaction.doc)
+        },
+      },
+      props: {
+        decorations(state) { return paperPagesKey.getState(state) },
+      },
+      view(view) {
+        let frame = 0
+        let previous = ''
+        const measure = () => {
+          if (!view.dom.isConnected) return
+          let y = paperPadding
+          const gaps: { position: number; height: number }[] = []
+          view.state.doc.forEach((_node, position) => {
+            const element = view.nodeDOM(position)
+            if (!(element instanceof HTMLElement)) return
+            const style = getComputedStyle(element)
+            const height = element.getBoundingClientRect().height + (parseFloat(style.marginBottom) || 0)
+            const page = Math.floor(y / paperStride)
+            const pageEnd = page * paperStride + paperHeight - paperPadding
+            if (height <= paperHeight - paperPadding * 2 && y + height > pageEnd) {
+              const gap = (page + 1) * paperStride + paperPadding - y
+              gaps.push({ position, height: gap })
+              y += gap
+            }
+            y += height
+          })
+          const signature = JSON.stringify(gaps)
+          if (signature === previous) return
+          previous = signature
+          const decorations = DecorationSet.create(view.state.doc, gaps.map(({ position, height }) =>
+            Decoration.widget(position, () => {
+              const gap = document.createElement('div')
+              gap.className = 'editor-page-gap'
+              gap.style.height = `${height}px`
+              return gap
+            }, { side: -1 }),
+          ))
+          view.dispatch(view.state.tr.setMeta(paperPagesKey, decorations).setMeta('addToHistory', false))
+        }
+        const schedule = () => {
+          cancelAnimationFrame(frame)
+          frame = requestAnimationFrame(measure)
+        }
+        const observer = new ResizeObserver(schedule)
+        observer.observe(view.dom)
+        schedule()
+        return {
+          update: schedule,
+          destroy() { cancelAnimationFrame(frame); observer.disconnect() },
+        }
+      },
+    })]
+  },
+})
+
 async function capture() {
   if (!editor.value || disposed) return
   try {
@@ -246,6 +316,7 @@ onMounted(() => {
         StarterKit.configure({ blockquote: false, codeBlock: false, horizontalRule: false, strike: false }),
         TableKit.configure({ table: { resizable: true, allowTableNodeSelection: true } }),
         TableBorders,
+        PaperPages,
         DocumentImage,
         Highlight,
         TextAlign.configure({ types: ['paragraph', 'heading'], defaultAlignment: 'left' }),
@@ -329,12 +400,20 @@ onUnmounted(() => {
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="addImage">
     </div>
     <div class="relative">
-      <EditorContent :editor="editor" class="min-h-80 min-w-0 rounded-xl border border-line bg-white px-3 py-6 text-sm sm:px-12 [&_.tiptap]:min-h-64 [&_.tiptap]:outline-none [&_.tiptap_p]:mb-3 [&_.tiptap_h1]:text-3xl [&_.tiptap_h2]:text-2xl [&_.tiptap_h3]:text-xl [&_.tiptap_h1]:font-semibold [&_.tiptap_h2]:font-semibold [&_.tiptap_h3]:font-semibold [&_.tiptap_ul]:list-disc [&_.tiptap_ol]:list-decimal [&_.tiptap_ul]:pl-6 [&_.tiptap_ol]:pl-6 [&_.tiptap_table]:w-full [&_.tiptap_table]:border-collapse [&_.tiptap_td]:border [&_.tiptap_th]:border [&_.tiptap_td]:p-2 [&_.tiptap_th]:p-2 [&_.tiptap_img]:max-w-full" />
+      <EditorContent :editor="editor" class="editor-paper-surface min-w-0 overflow-x-auto rounded-xl bg-[#e8e8ec] py-6 text-sm [&_.tiptap]:mx-auto [&_.tiptap]:min-h-[1123px] [&_.tiptap]:outline-none [&_.tiptap_p]:mb-3 [&_.tiptap_h1]:text-3xl [&_.tiptap_h2]:text-2xl [&_.tiptap_h3]:text-xl [&_.tiptap_h1]:font-semibold [&_.tiptap_h2]:font-semibold [&_.tiptap_h3]:font-semibold [&_.tiptap_ul]:list-disc [&_.tiptap_ol]:list-decimal [&_.tiptap_ul]:pl-6 [&_.tiptap_ol]:pl-6 [&_.tiptap_table]:w-full [&_.tiptap_table]:border-collapse [&_.tiptap_td]:border [&_.tiptap_th]:border [&_.tiptap_td]:p-2 [&_.tiptap_th]:p-2 [&_.tiptap_img]:max-w-full" />
       <div ref="boundaryGuide" hidden class="table-boundary-guide" aria-hidden="true" />
     </div>
   </div>
 </template>
 <style scoped>
+.editor-paper-surface :deep(.tiptap) {
+  box-sizing: border-box;
+  width: min(100%, 794px);
+  padding: 72px clamp(24px, 8%, 64px);
+  background: repeating-linear-gradient(to bottom, white 0 1122px, #cfd4d2 1122px 1123px, #e8e8ec 1123px 1147px);
+  box-shadow: 0 0 0 1px #cfd4d2;
+}
+.editor-paper-surface :deep(.editor-page-gap) { display: block; margin: 0; pointer-events: none; }
 .editor-tool {
   display: inline-flex;
   width: 2.5rem;

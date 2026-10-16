@@ -1,6 +1,11 @@
 export interface EditorData {
   blocks: { type: string; data: Record<string, unknown> }[]
 }
+export type DecorationPages = { mode: 'all' } | { mode: 'range'; ranges: [number, number][] }
+export interface PageDecoration {
+  image_url: string
+  pages: DecorationPages
+}
 export interface Placeholder {
   guid?: string
   page_number: number
@@ -34,6 +39,7 @@ export interface DocumentVersion {
   preview_status: 'none' | 'queued' | 'ready' | 'stale' | 'failed'
   preview_source?: 'editor' | 'upload' | null
   preview_error_code?: string | null
+  preview_error_message?: string | null
   finalization_error_code?: string | null
   conversion_status?: 'none' | 'queued' | 'processing' | 'ready' | 'failed'
   conversion_generation?: string | null
@@ -47,6 +53,8 @@ export interface DocumentVersion {
   source_type?: string
   has_source?: boolean
   editor_data?: EditorData
+  letterhead?: PageDecoration | null
+  footer?: PageDecoration | null
   updated_at: string
   published_at: string | null
 }
