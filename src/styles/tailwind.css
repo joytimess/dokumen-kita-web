@@ -1,5 +1,25 @@
 @import 'tailwindcss';
 
+.workspace-dropdown-enter-active,
+.workspace-dropdown-leave-active {
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+}
+.workspace-dropdown-leave-active {
+  transition-duration: 100ms;
+  transition-timing-function: ease-in;
+}
+.workspace-dropdown-enter-from,
+.workspace-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(0.25rem) scale(0.95);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-dropdown-enter-active,
+  .workspace-dropdown-leave-active {
+    transition: none;
+  }
+}
+
 @theme {
   --color-ink: #173d35;
   --color-primary: #21634c;

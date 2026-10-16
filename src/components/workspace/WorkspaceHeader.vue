@@ -207,8 +207,10 @@ onUnmounted(() => {
         <span class="material-symbols-outlined hidden text-muted sm:block" aria-hidden="true">expand_more</span>
       </button>
 
+      <Transition name="workspace-dropdown" mode="out-in">
       <section
         v-if="menu === 'notifications'"
+        key="notifications"
         id="workspace-notifications"
         class="absolute top-[calc(100%+0.75rem)] right-0 z-60 w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-line bg-white shadow-xl"
         :aria-label="t('Notifikasi')"
@@ -256,7 +258,8 @@ onUnmounted(() => {
       </section>
 
       <section
-        v-if="menu === 'profile'"
+        v-else-if="menu === 'profile'"
+        key="profile"
         id="workspace-profile"
         class="absolute top-[calc(100%+0.75rem)] right-0 z-60 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-line bg-white p-4 shadow-xl"
         :aria-label="t('Profil akun')"
@@ -279,6 +282,7 @@ onUnmounted(() => {
           <span class="material-symbols-outlined text-[20px]" aria-hidden="true">logout</span>{{ logoutBusy ? t('Keluar…') : t('Keluar') }}
         </button>
       </section>
+      </Transition>
     </div>
   </header>
 </template>

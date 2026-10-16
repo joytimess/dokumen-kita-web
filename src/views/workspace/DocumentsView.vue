@@ -71,7 +71,7 @@ async function loadList(number = 1) {
   openActions.value = ''
   page.value = undefined
   try {
-    const result = await documentsApi.list(number, status.value, summary.value ? perPage.value : 15)
+    const result = await documentsApi.list(number, status.value, perPage.value)
     if (!active || request !== listRequest || auth.user?.guid !== identity) return
     page.value = result
   } catch (cause) {
@@ -277,28 +277,25 @@ onUnmounted(() => {
         </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
           <StatusBadge :status="document.current_version.status" />
-          <div v-if="summary" class="relative">
+          <div class="relative">
             <button type="button" :aria-label="t('Buka tindakan dokumen :title', { title: document.title })" :aria-expanded="openActions === document.guid" :aria-controls="`document-actions-${document.guid}`" class="grid size-10 place-items-center rounded-lg text-muted hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="toggleActions(document.guid)">
               <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
             </button>
-            <div v-show="openActions === document.guid" :id="`document-actions-${document.guid}`" class="absolute right-0 top-full z-20 mt-1 min-w-44 rounded-xl border border-line bg-white p-1 shadow-xl">
-              <RouterLink v-if="document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Edit') }}</RouterLink>
-              <button v-if="document.current_version.status === 'completed'" type="button" class="block min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-soft disabled:opacity-50" :disabled="!!downloading" @click="toggleActions(document.guid); download(document)">
-                {{ t('Unduh PDF') }}
-              </button>
-              <RouterLink :to="`/documents/${document.guid}`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
-            </div>
+            <Transition name="workspace-dropdown">
+              <div v-show="openActions === document.guid" :id="`document-actions-${document.guid}`" class="absolute right-0 top-full z-20 mt-1 min-w-44 rounded-xl border border-line bg-white p-1 shadow-xl">
+                <RouterLink v-if="document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Edit') }}</RouterLink>
+                <button v-if="document.current_version.status === 'completed'" type="button" class="block min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-soft disabled:opacity-50" :disabled="!!downloading" @click="toggleActions(document.guid); download(document)">
+                  {{ t('Unduh PDF') }}
+                </button>
+                <RouterLink :to="`/documents/${document.guid}`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
+              </div>
+            </Transition>
           </div>
-          <RouterLink v-if="!summary && document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-semibold text-primary hover:bg-sage">{{ t('Edit') }}</RouterLink>
-          <button v-if="!summary && document.current_version.status === 'completed'" type="button" class="inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-sm font-semibold text-primary hover:bg-sage disabled:opacity-50" :disabled="!!downloading" @click="download(document)">
-            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span>{{ downloading === document.guid ? t('Mengunduh…') : t('Unduh PDF') }}
-          </button>
-          <RouterLink v-if="!summary" :to="`/documents/${document.guid}`" class="inline-flex min-h-10 items-center rounded-lg px-3 text-sm text-muted hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
         </div>
       </article>
     </div>
 
-    <nav v-if="summary && page" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
+    <nav v-if="page" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
       <label class="flex items-center gap-2 text-xs font-medium text-muted">
         {{ t('Tampilkan baris') }}
         <select v-model.number="perPage" class="h-9 rounded-md border border-line bg-white px-2 text-sm text-ink" @change="pageTo(1)">
@@ -316,11 +313,6 @@ onUnmounted(() => {
           <span class="material-symbols-outlined text-[20px]" aria-hidden="true">chevron_right</span>
         </button>
       </div>
-    </nav>
-    <nav v-else-if="page && page.meta.last_page > 1" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
-      <button type="button" class="min-h-11 rounded-lg px-3 text-primary hover:bg-sage disabled:opacity-40" :disabled="listLoading || !page.links.prev" @click="pageTo(page.meta.current_page - 1)">← {{ t('Sebelumnya') }}</button>
-      <span class="text-muted">{{ t('Halaman :current dari :last', { current: page.meta.current_page, last: page.meta.last_page }) }}</span>
-      <button type="button" class="min-h-11 rounded-lg px-3 text-primary hover:bg-sage disabled:opacity-40" :disabled="listLoading || !page.links.next" @click="pageTo(page.meta.current_page + 1)">{{ t('Berikutnya') }} →</button>
     </nav>
   </section>
 

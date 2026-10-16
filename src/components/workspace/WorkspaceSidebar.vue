@@ -7,17 +7,17 @@ import { language, setWorkspaceLanguage, t } from '../../services/workspace-lang
 const props = defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const route = useRoute()
-const documentsOpen = ref(true)
-const signsOpen = ref(true)
+const documentsOpen = ref(route.path.startsWith('/documents'))
+const signsOpen = ref(route.path === '/signature-assets')
 const flyout = ref('')
 const languageOpen = ref(false)
 const compact = computed(() => props.collapsed && !props.mobileOpen)
 const onDocuments = computed(() => route.path.startsWith('/documents'))
 const onSigns = computed(() => route.path === '/signature-assets')
 
-watch(() => route.path, () => {
-  if (onDocuments.value) documentsOpen.value = true
-  if (onSigns.value) signsOpen.value = true
+watch(() => route.path, (_path, previousPath) => {
+  if (onDocuments.value !== previousPath.startsWith('/documents') || !onDocuments.value) documentsOpen.value = onDocuments.value
+  if (onSigns.value !== (previousPath === '/signature-assets') || !onSigns.value) signsOpen.value = onSigns.value
   flyout.value = ''
   languageOpen.value = false
 })
@@ -60,7 +60,7 @@ function chooseLanguage(value: 'id' | 'en') {
     <nav class="min-h-0 flex-1 overflow-y-auto px-3 pb-4" :aria-label="t('Navigasi workspace')">
       <RouterLink
         to="/dashboard"
-        class="mb-6 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold"
+        class="mb-3 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold"
         :class="route.path === '/dashboard' ? 'bg-sage text-primary' : 'text-muted hover:bg-soft'"
         :aria-current="route.path === '/dashboard' ? 'page' : undefined"
         :title="compact ? t('Dashboard') : undefined"
@@ -73,8 +73,8 @@ function chooseLanguage(value: 'id' | 'en') {
       <section class="relative mb-3">
         <button
           type="button"
-          class="flex min-h-11 w-full items-center gap-3 rounded-xl bg-primary px-3 text-left text-sm font-semibold text-white"
-          :class="compact && 'justify-center px-0'"
+          class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold"
+          :class="[compact && 'justify-center px-0', onDocuments ? 'bg-primary text-white' : 'text-muted hover:bg-soft']"
           :aria-label="t('Buka navigasi Dokumen')"
           :aria-expanded="compact ? flyout === 'documents' : documentsOpen"
           aria-controls="documents-submenu"
@@ -85,6 +85,7 @@ function chooseLanguage(value: 'id' | 'en') {
           <span v-if="!compact" class="flex-1">{{ t('Dokumen') }}</span>
           <span v-if="!compact" class="material-symbols-outlined text-base" aria-hidden="true">{{ documentsOpen ? 'expand_less' : 'expand_more' }}</span>
         </button>
+        <Transition name="workspace-dropdown">
         <div
           v-if="(!compact && documentsOpen) || (compact && flyout === 'documents')"
           id="documents-submenu"
@@ -102,13 +103,14 @@ function chooseLanguage(value: 'id' | 'en') {
             @click="emit('close')"
           >{{ t('Dokumen Saya') }}</RouterLink>
         </div>
+        </Transition>
       </section>
 
       <section class="relative">
         <button
           type="button"
-          class="flex min-h-11 w-full items-center gap-3 rounded-xl bg-primary px-3 text-left text-sm font-semibold text-white"
-          :class="compact && 'justify-center px-0'"
+          class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold"
+          :class="[compact && 'justify-center px-0', onSigns ? 'bg-primary text-white' : 'text-muted hover:bg-soft']"
           :aria-label="t('Buka navigasi Tanda Tangan')"
           :aria-expanded="compact ? flyout === 'signs' : signsOpen"
           aria-controls="signs-submenu"
@@ -119,6 +121,7 @@ function chooseLanguage(value: 'id' | 'en') {
           <span v-if="!compact" class="flex-1">{{ t('Tanda Tangan') }}</span>
           <span v-if="!compact" class="material-symbols-outlined text-base" aria-hidden="true">{{ signsOpen ? 'expand_less' : 'expand_more' }}</span>
         </button>
+        <Transition name="workspace-dropdown">
         <div
           v-if="(!compact && signsOpen) || (compact && flyout === 'signs')"
           id="signs-submenu"
@@ -136,6 +139,7 @@ function chooseLanguage(value: 'id' | 'en') {
             {{ t('Riwayat Tanda Tangan') }}<span class="mt-1 block text-xs text-muted">{{ t('Fitur ini belum tersedia.') }}</span>
           </p>
         </div>
+        </Transition>
       </section>
     </nav>
 
