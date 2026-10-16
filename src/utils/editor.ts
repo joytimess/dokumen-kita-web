@@ -45,7 +45,9 @@ export function editorPayload(data: EditorData): EditorData {
         data: {
           withHeadings: !!d.withHeadings,
           showBorders: d.showBorders !== false,
-          content: (d.content as unknown[][]).map((row) => row.map(clean)),
+          content: (d.content as unknown[][]).map((row) => row.map((cell) =>
+            typeof cell === 'string' ? clean(cell) : cell,
+          )),
         },
       }
     if (block.type === 'image') {

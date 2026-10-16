@@ -254,12 +254,33 @@ async function render(data: EditorData) {
     emit('invalid', error.value)
   }
 }
+function showCellError(fields: Record<string, string>) {
+  const surface = editor.value?.view.dom
+  if (!surface) return
+  surface.querySelectorAll('.validation-cell').forEach((cell) => {
+    cell.classList.remove('validation-cell')
+    cell.removeAttribute('aria-invalid')
+    cell.removeAttribute('title')
+  })
+  for (const [path, message] of Object.entries(fields)) {
+    const match = /^editor_data\.blocks\.(\d+)\.data\.content\.(\d+)\.(\d+)(?:\.|$)/.exec(path)
+    if (!match) continue
+    const [block, row, column] = match.slice(1).map(Number)
+    const tableIndex = props.data.blocks.slice(0, block).filter((item) => item.type === 'table').length
+    const cell = surface.querySelectorAll('table')[tableIndex]?.querySelectorAll('tr')[row]?.children[column]
+    if (!(cell instanceof HTMLElement)) continue
+    cell.classList.add('validation-cell')
+    cell.setAttribute('aria-invalid', 'true')
+    cell.setAttribute('title', message)
+    cell.scrollIntoView({ block: 'nearest' })
+  }
+}
 async function lock() {
   locked = true
   clearTableCursor()
   editor.value?.setEditable(false)
 }
-defineExpose({ capture, render, lock })
+defineExpose({ capture, render, lock, showCellError })
 
 function formatBlock(event: Event) {
   const level = Number((event.target as HTMLSelectElement).value)
@@ -459,6 +480,7 @@ onUnmounted(() => {
 :deep(.tiptap.resize-cursor th) { cursor: col-resize; }
 :deep(.tiptap td.selectedCell),
 :deep(.tiptap th.selectedCell) { background-color: #eaf1fd; }
+:deep(.tiptap .validation-cell) { outline: 2px solid var(--color-error); outline-offset: -2px; }
 :deep(.tiptap table[data-show-borders="false"] th),
 :deep(.tiptap table[data-show-borders="false"] td) { border-color: transparent; }
 </style>

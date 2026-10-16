@@ -223,6 +223,7 @@ async function load() {
         const feedback = workspaceError(cause)
         error.value = feedback.message
         fields.value = feedback.fields
+        editor.value?.showCellError(feedback.fields)
         if (feedback.retryAt) {
           saveBlockedUntil = feedback.retryAt
           error.value += ` Coba lagi dalam ${Math.ceil((saveBlockedUntil - Date.now()) / 1000)} detik.`
@@ -334,6 +335,8 @@ function schedulePoll() {
 function changed(data: EditorData) {
   pendingEditor.value = false
   editorError.value = ''
+  fields.value = {}
+  editor.value?.showCellError({})
   content.value = data
   if (!editable.value) return
   if (JSON.stringify(data) !== savedContent) reviewed.value = false

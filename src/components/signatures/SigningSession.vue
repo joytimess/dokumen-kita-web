@@ -18,8 +18,7 @@ const props = defineProps<{
   owner?: boolean
   status: string
   isCurrent?: boolean
-  refresh?: () => Promise<void>
-  contextComplete?: boolean
+  refresh: () => Promise<boolean>
 }>()
 const emit = defineEmits<{ signed: [] }>()
 const auth = useAuthStore(),
@@ -33,11 +32,12 @@ const hash = ref(''),
   message = ref(''),
   blockedUntil = ref(0),
   clock = ref(Date.now())
-const revisionReason = ref(''), revisionBusy = ref(false), revisionResult = ref<RevisionResult>()
+const revisionReason = ref(''),
+  revisionBusy = ref(false),
+  revisionResult = ref<RevisionResult>()
 const selected = ref<SignatureAsset>(),
   assetUrl = ref(''),
-  dialog = ref<HTMLDialogElement>(),
-  dialogOpen = ref(false)
+  assetOptions = ref<HTMLElement>()
 const action = createSignatureAction((payload) =>
   documentsApi.sign(props.assignment!.guid, payload),
 )
@@ -48,21 +48,15 @@ const timer = setInterval(() => {
   clock.value = Date.now()
 }, 1000)
 const remaining = computed(() => Math.max(0, Math.ceil((blockedUntil.value - clock.value) / 1000)))
-const canSign = computed(
+const canRequestRevision = computed(
   () =>
-    props.contextComplete !== false &&
     props.assignment?.status === 'ready' &&
     !!props.assignment.claimed_at &&
-    !!props.assignment.placeholders?.length &&
     auth.user?.email_verified &&
     auth.user.guid === identity &&
     props.isCurrent !== false &&
     props.status === 'in_progress',
 )
-const canRequestRevision = computed(() => props.assignment?.status === 'ready' &&
-  !!props.assignment.claimed_at && auth.user?.email_verified && auth.user.guid === identity &&
-  props.isCurrent !== false &&
-  props.status === 'in_progress')
 const overlays = computed<(Placeholder & { label: string; image?: string })[]>(() =>
   (props.assignment?.placeholders ?? []).map((p) => ({
     ...p,
@@ -70,6 +64,13 @@ const overlays = computed<(Placeholder & { label: string; image?: string })[]>((
     image: assetUrl.value || undefined,
   })),
 )
+watch(confirmed, async (value) => {
+  if (value) {
+    await nextTick()
+    assetOptions.value?.scrollIntoView({ block: 'start' })
+    assetOptions.value?.focus({ preventScroll: true })
+  }
+})
 watch(
   [
     () => props.versionGuid,
@@ -90,7 +91,6 @@ watch(
   (value) => {
     if (value !== identity) {
       action.dispose()
-      close()
       selected.value = undefined
       revoke()
     }
@@ -102,7 +102,7 @@ function revoke() {
   assetUrl.value = ''
 }
 async function select(asset: SignatureAsset) {
-  if (pending.value || busy.value) return
+  if (pending.value || busy.value || readBusy.value) return
   selected.value = asset
   revoke()
   const request = new AbortController()
@@ -129,26 +129,11 @@ function pdfFailure() {
   confirmed.value = false
   readConfirmed.value = false
 }
-function cancel(event: Event) {
-  if (busy.value || readBusy.value) event.preventDefault()
-  else close()
-}
-async function open() {
-  if (!canSign.value || !eligible.value || !confirmed.value || !hash.value || remaining.value)
-    return
-  dialogOpen.value = true
-  await nextTick()
-  dialog.value?.showModal()
-}
-function close() {
-  dialog.value?.close()
-  dialogOpen.value = false
-}
 async function submit() {
   if (
     !selected.value ||
     !assetUrl.value ||
-    !canSign.value ||
+    !canRequestRevision.value ||
     !eligible.value ||
     !confirmed.value ||
     !hash.value ||
@@ -159,22 +144,36 @@ async function submit() {
   )
     return
   error.value = ''
+  readBusy.value = true
   try {
-    if (!pending.value && props.refresh) {
-      await props.refresh()
+    if (!pending.value) {
+      if (!(await props.refresh())) {
+        error.value = 'Status versi terbaru belum dapat diperiksa. Coba lagi.'
+        return
+      }
       await nextTick()
-      if (!active || !canSign.value || !hash.value || !eligible.value || !confirmed.value) return
+      if (
+        !active ||
+        !selected.value ||
+        !assetUrl.value ||
+        !canRequestRevision.value ||
+        !hash.value ||
+        !eligible.value ||
+        !confirmed.value ||
+        blocked.value ||
+        remaining.value
+      )
+        return
     }
     if (!readConfirmed.value) {
-      readBusy.value = true
       await documentsApi.read(props.assignment!.guid, hash.value)
       if (!active) return
       readConfirmed.value = true
-      readBusy.value = false
     }
     await action.sign(selected.value.guid, hash.value)
-    if (!active || auth.user?.guid !== identity) return
-    close()
+    if (!active || !completed.value || auth.user?.guid !== identity) return
+    selected.value = undefined
+    revoke()
     message.value =
       'Persetujuan tanda tangan diterima server. Status versi ditentukan oleh pemeriksaan terbaru, bukan preview overlay.'
     emit('signed')
@@ -199,8 +198,19 @@ async function submit() {
 }
 async function requestRevision() {
   const reason = revisionReason.value.trim()
-  if (!canRequestRevision.value || reason.length < 3 || reason.length > 1000 || revisionBusy.value || busy.value || readBusy.value || pending.value ||
-    !window.confirm('Versi ini akan dihentikan. Semua penerima harus membaca dan menandatangani ulang draft baru. Lanjutkan?')) return
+  if (
+    !canRequestRevision.value ||
+    reason.length < 3 ||
+    reason.length > 1000 ||
+    revisionBusy.value ||
+    busy.value ||
+    readBusy.value ||
+    pending.value ||
+    !window.confirm(
+      'Versi ini akan dihentikan. Semua penerima harus membaca dan menandatangani ulang draft baru. Lanjutkan?',
+    )
+  )
+    return
   revisionBusy.value = true
   error.value = ''
   try {
@@ -214,20 +224,21 @@ async function requestRevision() {
     error.value = feedback.message
     if (feedback.status === 401) auth.user = null
     else if ([403, 404, 409, 422].includes(feedback.status ?? 0)) await props.refresh?.()
+  } finally {
+    revisionBusy.value = false
   }
-  finally { revisionBusy.value = false }
 }
 onUnmounted(() => {
   active = false
   clearInterval(timer)
   action.dispose()
   revoke()
-  close()
 })
 </script>
 <template>
   <div class="grid min-w-0 gap-5">
-    <FeedbackMessage :message="message" /><FeedbackMessage :message="error" error /><PdfViewer
+    <FeedbackMessage :message="message" /><FeedbackMessage :message="error" error />
+    <PdfViewer
       :version-guid="versionGuid"
       :expected-hash="expectedHash"
       :overlays="overlays"
@@ -236,78 +247,52 @@ onUnmounted(() => {
       @failure="pdfFailure"
     />
     <section v-if="assignment" class="rounded-xl border border-line bg-white p-5">
-      <h2 class="font-semibold">Persetujuan Anda</h2>
-      <div v-if="revisionResult" class="mt-3 text-sm"><p>Versi sebelumnya: {{ revisionResult.previous_status }}. Draft penerus: {{ revisionResult.draft_status }}.</p><RouterLink v-if="assignment.document_guid" :to="`/documents/${assignment.document_guid}`" class="mt-2 inline-block text-primary underline">Buka detail dokumen</RouterLink></div>
+      <h2 class="font-semibold">Konfirmasi baca dan tanda tangan</h2>
+      <div v-if="revisionResult" class="mt-3 text-sm">
+        <p>
+          Versi sebelumnya: {{ revisionResult.previous_status }}. Draft penerus:
+          {{ revisionResult.draft_status }}.
+        </p>
+        <RouterLink
+          v-if="assignment.document_guid"
+          :to="`/documents/${assignment.document_guid}`"
+          class="mt-2 inline-block text-primary underline"
+          >Buka detail dokumen</RouterLink
+        >
+      </div>
       <p v-if="completed || assignment.status === 'signed'" class="mt-3 text-sm">
         Tanda tangan telah diterima. Tindakan baru tidak tersedia untuk persetujuan ini.
       </p>
-      <template v-else-if="canSign && !revisionResult"
+      <template v-else-if="canRequestRevision && !revisionResult"
         ><p class="my-3 text-sm text-muted">
           Kunjungi semua halaman yang berhasil dirender dan capai akhir dokumen. Pencarian atau
-          lompat ke halaman terakhir saja tidak memenuhi syarat.
+          lompat ke halaman terakhir saja tidak memenuhi syarat. Setelah itu, centang pernyataan
+          untuk memilih tanda tangan.
         </p>
         <p v-if="!hash" class="my-3 text-sm text-error">
           Hash versi resmi belum tersedia. Persetujuan diblokir.
         </p>
-        <label class="my-4 flex items-start gap-3 text-sm"
+        <label class="mt-4 mb-2 flex items-start gap-3 text-sm"
           ><input
             v-model="confirmed"
             type="checkbox"
             class="mt-1 accent-primary"
             :disabled="!eligible || !hash || busy || blocked"
           />Saya telah membaca dokumen versi ini.</label
-        ><BaseButton
-          :disabled="!eligible || !confirmed || !hash || blocked || remaining > 0"
-          @click="open"
-          >{{ pending ? 'Tinjau ulang percobaan yang sama' : 'Pilih tanda tangan' }}</BaseButton
         >
         <p v-if="remaining" class="mt-3 text-xs text-muted">
           Coba kembali dalam {{ remaining }} detik.
         </p></template
       >
-      <div v-if="canRequestRevision && !revisionResult" class="mt-6 border-t border-line pt-5">
-        <h3 class="font-semibold">Minta revisi</h3>
-        <p class="my-2 text-xs text-muted">Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.</p>
-        <textarea v-model="revisionReason" minlength="3" maxlength="1000" class="min-h-28 w-full rounded border border-line p-3 text-sm" placeholder="Alasan revisi (3–1000 karakter)" />
-        <BaseButton class="mt-3" :loading="revisionBusy" :disabled="revisionReason.trim().length < 3 || busy || readBusy || !!pending" @click="requestRevision">Minta revisi</BaseButton>
-      </div>
-      <p v-else-if="contextComplete === false" class="mt-3 text-sm text-muted">
-        Metadata judul dan nomor versi belum tersedia dari respons klaim. Persetujuan memerlukan
-        detail dokumen berizin yang lengkap; PDF tetap dapat dibaca.
-      </p>
-      <p v-else class="mt-3 text-sm text-muted">
-        Tindakan belum tersedia: akun harus mengklaim undangan, terverifikasi, dan mendapat giliran
-        aktif.
-      </p>
-    </section>
-    <dialog
-      ref="dialog"
-      class="m-auto max-h-[90dvh] w-[calc(100%-24px)] max-w-3xl overflow-auto rounded-xl border border-line bg-soft p-4 text-ink shadow-xl backdrop:bg-ink/40 sm:p-7"
-      aria-labelledby="sign-title"
-      @cancel="cancel"
-    >
-      <div class="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h2 id="sign-title" class="text-xl font-semibold">Konfirmasi tanda tangan</h2>
-          <p class="mt-2 text-sm wrap-anywhere">
-            {{ title }} · {{ versionNumber ? `Versi ${versionNumber}` : 'Snapshot undangan' }}
-          </p>
-          <p class="mt-2 text-xs text-muted wrap-anywhere">
-            {{ auth.user?.name }} · {{ auth.user?.email }} ·
-            {{ assignment?.placeholders?.length ?? 0 }} area
-          </p>
-        </div>
-        <button
-          class="min-h-11 px-3 text-sm text-primary"
-          :disabled="busy || readBusy"
-          aria-label="Tutup dialog"
-          @click="close"
-        >
-          Tutup
-        </button>
-      </div>
-      <template v-if="dialogOpen"
-        ><AssetLibrary
+      <div
+        v-if="canRequestRevision && eligible && confirmed && !completed && !revisionResult"
+        ref="assetOptions"
+        role="region"
+        aria-label="Pilih cara tanda tangan"
+        tabindex="-1"
+        class="mt-2"
+      >
+        <AssetLibrary
           selectable
           :selected="selected?.guid"
           :disabled="!!pending || busy || readBusy"
@@ -316,8 +301,7 @@ onUnmounted(() => {
         <div v-if="assetUrl" class="my-4 rounded-lg border border-line bg-white p-4">
           <img :src="assetUrl" alt="Tanda tangan pilihan Anda" class="h-24 w-full object-contain" />
           <p class="mt-2 text-xs text-muted">
-            Preview ini diterapkan ke {{ overlays.length }} area milik Anda. Tutup dialog untuk
-            meninjau penempatan pada snapshot sebelum menyetujui.
+            Preview ini diterapkan ke {{ overlays.length }} area milik Anda.
           </p>
         </div>
         <FeedbackMessage :message="error" error />
@@ -332,8 +316,37 @@ onUnmounted(() => {
           >{{
             pending ? 'Coba persetujuan yang sama' : 'Konfirmasi baca dan tanda tangani'
           }}</BaseButton
-        ></template
+        >
+      </div>
+      <div v-if="canRequestRevision && !revisionResult" class="mt-6 border-t border-line pt-5">
+        <h3 class="font-semibold">Minta revisi</h3>
+        <p class="my-2 text-xs text-muted">
+          Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.
+        </p>
+        <textarea
+          v-model="revisionReason"
+          minlength="3"
+          maxlength="1000"
+          class="min-h-28 w-full rounded border border-line p-3 text-sm"
+          placeholder="Alasan revisi (3–1000 karakter)"
+        />
+        <BaseButton
+          class="mt-3"
+          :loading="revisionBusy"
+          :disabled="revisionReason.trim().length < 3 || busy || readBusy || !!pending"
+          @click="requestRevision"
+          >Minta revisi</BaseButton
+        >
+      </div>
+      <p
+        v-else-if="
+          !canRequestRevision && assignment.status !== 'signed' && !completed && !revisionResult
+        "
+        class="mt-3 text-sm text-muted"
       >
-    </dialog>
+        Tindakan belum tersedia: undangan harus diklaim, email diverifikasi, dan giliran aktif pada
+        versi terbaru yang masih dalam proses.
+      </p>
+    </section>
   </div>
 </template>

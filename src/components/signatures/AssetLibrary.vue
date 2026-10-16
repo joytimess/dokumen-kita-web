@@ -127,7 +127,9 @@ onUnmounted(() => {
                 asset.height
               }}
               px</span
-            ></component
+            ><span v-if="selectable" class="mt-2 block text-xs font-semibold text-primary">{{
+              selected === asset.guid ? 'Tanda tangan dipilih' : 'Pilih tanda tangan ini'
+            }}</span></component
           >
         </div>
         <nav

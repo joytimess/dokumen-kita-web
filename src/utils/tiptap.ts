@@ -40,7 +40,20 @@ export function editorDataToHtml(data: EditorData): string {
         const table = value.showBorders === false ? '<table data-show-borders="false">' : '<table>'
         return `${table}<tbody>${rows.map((row, index) => `<tr>${row.map((cell) => {
           const tag = value.withHeadings && index === 0 ? 'th' : 'td'
-          return `<${tag}><p>${blockText(cell)}</p></${tag}>`
+          if (typeof cell === 'string') return `<${tag}><p>${blockText(cell)}</p></${tag}>`
+          if (!Array.isArray(cell)) throw new Error('Isi sel tabel tidak valid.')
+          return `<${tag}>${cell.map((node) => {
+            if (!node || typeof node !== 'object') throw new Error('Isi sel tabel tidak valid.')
+            const item = node as TiptapNode & { file?: { url?: unknown }; caption?: unknown }
+            if (item.type === 'paragraph') return `<p>${inlineHtml(item.content)}</p>`
+            if (item.type === 'image') {
+              const src = item.file?.url
+              if (typeof src !== 'string' || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src))
+                throw new Error('Gambar sel tabel tidak valid.')
+              return `<img src="${escapeHtml(src)}" data-caption="${escapeHtml(blockText(item.caption ?? ''))}">`
+            }
+            throw new Error('Blok sel tabel tidak didukung.')
+          }).join('')}</${tag}>`
         }).join('')}</tr>`).join('')}</tbody></table>`
       }
       case 'image': {
@@ -99,17 +112,33 @@ function tableData(node: TiptapNode) {
   const rows = (node.content ?? []).map((row) => {
     if (row.type !== 'tableRow') throw new Error('Struktur tabel tidak didukung.')
     return (row.content ?? []).map((cell) => {
-      if (!['tableCell', 'tableHeader'].includes(cell.type) ||
-          Number(cell.attrs?.colspan ?? 1) !== 1 || Number(cell.attrs?.rowspan ?? 1) !== 1 ||
-          cell.content?.length !== 1 || cell.content[0]?.type !== 'paragraph')
-        throw new Error('Sel tabel gabungan atau berisi blok kompleks belum didukung PDF backend.')
-      return { header: cell.type === 'tableHeader', text: inlineHtml(cell.content[0].content) }
+      if (!['tableCell', 'tableHeader'].includes(cell.type)) throw new Error('Struktur sel tabel tidak didukung.')
+      if (Number(cell.attrs?.colspan ?? 1) !== 1 || Number(cell.attrs?.rowspan ?? 1) !== 1)
+        throw new Error('Penggabungan sel tabel belum didukung PDF backend.')
+      const content = (cell.content ?? []).map((block) => {
+        if (block.type === 'paragraph') {
+          inlineHtml(block.content)
+          return { type: 'paragraph', content: (block.content ?? []).map((inline) => {
+            if (inline.type === 'hardBreak') return { type: 'hardBreak' }
+            return { type: 'text', text: inline.text, ...(inline.marks?.length ? { marks: inline.marks.map((mark) =>
+              mark.type === 'link' ? { type: 'link', attrs: { href: mark.attrs?.href } } : { type: mark.type },
+            ) } : {}) }
+          }) }
+        }
+        if (block.type === 'image') {
+          const src = block.attrs?.src
+          if (typeof src !== 'string') throw new Error('Gambar sel tabel tidak valid.')
+          return { type: 'image', file: { url: src }, caption: String(block.attrs?.caption ?? '') }
+        }
+        throw new Error('Blok sel tabel belum didukung PDF backend.')
+      })
+      return { header: cell.type === 'tableHeader', content }
     })
   })
   const withHeadings = !!rows[0]?.length && rows[0].every((cell) => cell.header)
   if (rows.some((row, index) => row.some((cell) => cell.header !== (withHeadings && index === 0))))
     throw new Error('Hanya baris pertama yang dapat menjadi judul tabel.')
-  return { withHeadings, ...(node.attrs?.showBorders === false ? { showBorders: false } : {}), content: rows.map((row) => row.map((cell) => cell.text)) }
+  return { withHeadings, ...(node.attrs?.showBorders === false ? { showBorders: false } : {}), content: rows.map((row) => row.map((cell) => cell.content)) }
 }
 
 export function tiptapToEditorData(doc: TiptapNode): EditorData {

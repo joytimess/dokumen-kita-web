@@ -63,6 +63,14 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+For user-facing bugs and workflows:
+
+- Define the expected sequence from the user's perspective, including what appears after each action and what the server must accept.
+- Reproduce the reported state with the same route, role, data, and action before changing code. Inspect the full UI state when a screenshot shows only part of the page.
+- Trace the behavior across callers, props and their runtime defaults, render conditions, async state, API requests, and backend authorization. An explanation must account for the observed behavior before you edit.
+- Add a focused regression check for the failure when practical, then verify the requested behavior in the running UI when available. A passing build or API test does not prove that a control is visible or usable.
+- If direct UI verification is unavailable, state exactly what was verified and what remains unverified. Do not present an inferred UI outcome as confirmed.
+
 ## 5. Engineering principles
 
 - Read the relevant existing code before making changes.

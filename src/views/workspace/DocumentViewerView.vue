@@ -11,18 +11,24 @@ import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
 const route = useRoute(), auth = useAuthStore(), version = ref<DocumentVersion>()
 const { busy, error, run } = useWorkspaceRequest()
 const owner = computed(() => version.value?.editor_revision !== undefined)
-const assignment = computed(() => version.value?.assignments?.find(a => a.recipient_email.toLowerCase() === auth.user?.email.toLowerCase()))
-const canView = computed(() => owner.value || (assignment.value && ['ready', 'signed'].includes(assignment.value.status)))
+const assignment = computed(() => {
+  const assignments = version.value?.assignments ?? []
+  return owner.value
+    ? assignments.find(a => a.recipient_email.toLowerCase() === auth.user?.email.toLowerCase())
+    : assignments[0]
+})
+const canView = computed(() => owner.value || (assignment.value && ['ready', 'signed', 'revision_requested', 'rejected'].includes(assignment.value.status)))
 let active = true, request = 0, polls = 0, timer: ReturnType<typeof setTimeout> | undefined
 async function load() {
   const id = ++request
   const guid = String(route.params.versionGuid)
   const result = await run(() => documentsApi.version(guid))
-  if (!active || id !== request || String(route.params.versionGuid) !== guid) return
+  if (!active || id !== request || String(route.params.versionGuid) !== guid) return false
   if (result) version.value = result
   clearTimeout(timer)
   if (result?.status === 'finalizing' && !result.finalization_error_code && globalThis.document.visibilityState === 'visible' && polls < 30)
     timer = setTimeout(() => { polls++; void load() }, 5000)
+  return !!result
 }
 watch(() => [route.params.versionGuid, auth.user?.guid], () => { version.value = undefined; polls = 0; clearTimeout(timer); void load() })
 onMounted(load)
@@ -40,9 +46,9 @@ onUnmounted(() => { active = false; request++; clearTimeout(timer) })
   <FeedbackMessage :message="error" error />
   <button class="mb-4 min-h-11 text-sm text-primary underline" :disabled="busy" @click="load">Periksa status</button>
   <p v-if="busy && !version" role="status">Memuat metadata…</p>
+  <p v-if="version?.status === 'finalizing' && canView && version.preview_status === 'ready'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">PDF final sedang disiapkan. PDF di bawah ini adalah pratinjau versi yang ditandatangani.</p>
+  <p v-if="version?.status === 'revision_requested' || version?.status === 'superseded'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">Versi ini dihentikan untuk revisi. Tindakan lama tidak berlaku pada draft baru.</p>
   <p v-if="assignment?.status === 'waiting'" class="rounded-xl border border-line bg-white p-6">Menunggu giliran. PDF, posisi, konfirmasi baca, dan tanda tangan belum tersedia.</p>
-  <p v-else-if="version?.status === 'revision_requested' || version?.status === 'superseded'" class="rounded-xl border border-line bg-white p-6">Versi ini dihentikan untuk revisi. Tindakan lama tidak berlaku pada draft baru.</p>
-  <p v-else-if="version?.status === 'finalizing'" class="rounded-xl border border-line bg-white p-6">PDF final sedang disiapkan. Periksa status lagi nanti.</p>
   <SigningSession v-else-if="version && canView && (version.preview_status === 'ready' || version.status === 'completed')"
     :key="`${version.guid}:${version.content_hash}:${version.status}`" :version-guid="version.guid"
     :title="version.document_title || 'Dokumen'" :version-number="version.version_number"
