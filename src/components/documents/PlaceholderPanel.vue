@@ -8,6 +8,7 @@ import { roundPosition, validPlaceholder } from '../../utils/documents'
 import PdfViewer from './PdfViewer.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { confirmAction, notify } from '../../services/feedback'
 const props = defineProps<{
   versionGuid: string
   hash: string
@@ -84,7 +85,7 @@ async function save() {
     error.value = 'Terlalu banyak permintaan. Tunggu hingga pembatasan server berakhir.'
     return
   }
-  if (busy.value || !pdfValid.value || !(await props.flush())) return
+  if (busy.value || !pdfValid.value) return
   if (
     !props.assignments.every((a) =>
       (rows.value[a.guid] ?? []).every((p) => validPlaceholder(p, props.pages)),
@@ -93,6 +94,10 @@ async function save() {
     error.value = 'Area harus berukuran positif dan berada dalam halaman.'
     return
   }
+  if (!(await confirmAction('Simpan posisi tanda tangan untuk semua penerima?', {
+    title: 'Simpan posisi', action: 'Simpan',
+  }))) return
+  if (!(await props.flush())) return
   busy.value = true
   error.value = ''
   const updated: Assignment[] = []
@@ -123,7 +128,10 @@ async function save() {
   }
   busy.value = false
   emit('dirty', changed.value.size > 0)
-  if (!changed.value.size) emit('saved', updated)
+  if (!changed.value.size) {
+    emit('saved', updated)
+    notify.success('Posisi tanda tangan tersimpan.')
+  }
   else {
     reviewed.value = false
     emit('reviewed', false)
@@ -143,7 +151,10 @@ function updateArea(area: Placeholder, field: 'x' | 'y' | 'width' | 'height') {
   area[field] = roundPosition(Number(area[field]))
   mark(selected.value)
 }
-function removeArea(index: number) {
+async function removeArea(index: number) {
+  if (!(await confirmAction('Hapus area tanda tangan ini?', {
+    title: 'Hapus area', action: 'Hapus', danger: true,
+  }))) return
   rows.value[selected.value]!.splice(index, 1)
   mark(selected.value)
 }

@@ -1,6 +1,7 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { documentsApi } from '../services/documents.service'
 import { workspaceError } from '../services/workspace.errors'
+import { notify } from '../services/feedback'
 import type { DocumentRecord } from '../types/documents'
 import {
   decorationKinds,
@@ -155,6 +156,8 @@ export function useDecorations(ctx: DecorationsContext) {
       for (const kind of decorationKinds) {
         if (!decorationDirty(kind)) continue
         const draft = decorations.value[kind]
+        const removing = draft.remove
+        const changingImage = !!draft.file
         const pages = selectedPages(draft)
         const label = decorationLabel[kind]
         if (!draft.remove && !pages) {
@@ -197,6 +200,8 @@ export function useDecorations(ctx: DecorationsContext) {
           draft.mode = version[kind]?.pages.mode ?? 'all'
           draft.ranges = rangeText(version[kind]?.pages)
           ctx.error.value = ''
+          if (removing) notify.success(`${label} dihapus.`)
+          else if (changingImage) notify.success(`Gambar ${label} tersimpan.`)
           void showSaved(kind)
         } catch (cause) {
           const feedback = workspaceError(cause)

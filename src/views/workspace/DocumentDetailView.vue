@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/auth'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
+import { confirmAction, notify } from '../../services/feedback'
 import { dateLabel, ownAssignment } from '../../utils/documents'
 import type { Assignment, AuditEvent, DocumentRecord, DocumentVersion, EmailNotification, Page } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
@@ -77,8 +78,11 @@ async function loadActivity(kind: 'audit' | 'versions' | 'emails', page: number)
 }
 async function retryFinalization() {
   if (!document.value) return
+  if (!(await confirmAction('Susun ulang PDF final dokumen ini?', {
+    title: 'Susun PDF final', action: 'Susun ulang',
+  }))) return
   const result = await run(() => documentsApi.finalize(document.value!.current_version.guid))
-  if (result) { message.value = 'Permintaan penyusunan PDF final diterima.'; await load() }
+  if (result) { message.value = 'Permintaan penyusunan PDF final diterima.'; notify.success(message.value); await load() }
 }
 function focus() {
   if (
@@ -93,7 +97,9 @@ function focus() {
 async function resend(a: Assignment) {
   if (
     (blocked.value[a.guid] ?? 0) > clock.value ||
-    !window.confirm('Minta ulang undangan? Link lama akan diganti.')
+    !(await confirmAction('Minta ulang undangan? Link lama akan diganti.', {
+      title: 'Kirim ulang undangan', action: 'Kirim ulang',
+    }))
   )
     return
   const result = await run(async () => {
@@ -108,6 +114,7 @@ async function resend(a: Assignment) {
   if (result)
     message.value =
       'Permintaan undangan diterima dan link diperbarui. Email belum dipastikan masuk inbox.'
+  if (result) notify.success(message.value)
 }
 const remaining = (guid: string) =>
   Math.max(0, Math.ceil(((blocked.value[guid] ?? 0) - clock.value) / 1000))

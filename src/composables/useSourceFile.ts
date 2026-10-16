@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 import { documentsApi } from '../services/documents.service'
 import { workspaceError } from '../services/workspace.errors'
+import { confirmAction } from '../services/feedback'
 import type { useWorkspaceRequest } from './useWorkspaceRequest'
 import type { DocumentRecord, DocumentVersion, EditorData } from '../types/documents'
 
@@ -43,14 +44,17 @@ export function useSourceFile(ctx: SourceFileContext) {
       ctx.error.value = 'Pilih PDF/DOCX maksimal 20.480 KB.'
       return
     }
-    if (
-      ctx.document.value?.current_version.has_source &&
-      !window.confirm('Sumber lama akan diganti dan pratinjau tidak lagi siap. Lanjutkan?')
-    )
-      return
-    if (!(await ctx.flush())) return
     const replace = !!ctx.content.value.blocks.length
-    if (replace && !window.confirm('Hasil konversi akan mengganti isi editor. Lanjutkan?')) return
+    const replacingSource = !!ctx.document.value?.current_version.has_source
+    const warning = [
+      replacingSource ? 'Sumber lama akan diganti dan pratinjau tidak lagi siap.' : 'Impor sumber baru?',
+      replace ? 'Hasil konversi akan mengganti isi editor.' : '',
+    ].filter(Boolean).join(' ')
+    if (!(await confirmAction(warning, {
+      title: replacingSource || replace ? 'Ganti sumber dokumen' : 'Impor sumber dokumen',
+      action: replacingSource || replace ? 'Ganti sumber' : 'Impor',
+    }))) return
+    if (!(await ctx.flush())) return
     ctx.stopPolling()
     const result = await ctx.run(async () => {
       try {
@@ -78,9 +82,12 @@ export function useSourceFile(ctx: SourceFileContext) {
   }
 
   async function retryConversion() {
-    if (!(await ctx.flush())) return
     const replace = !!ctx.content.value.blocks.length
-    if (replace && !window.confirm('Hasil konversi akan mengganti isi editor. Lanjutkan?')) return
+    if (!(await confirmAction(
+      replace ? 'Hasil konversi akan mengganti isi editor. Coba lagi?' : 'Coba konversi sumber lagi?',
+      { title: 'Konversi sumber', action: 'Coba lagi' },
+    ))) return
+    if (!(await ctx.flush())) return
     ctx.stopPolling()
     const result = await ctx.run(() =>
       documentsApi.retryConversion(

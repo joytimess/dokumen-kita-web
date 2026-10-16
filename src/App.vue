@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import FeedbackMessage from './components/ui/FeedbackMessage.vue'
 import BaseButton from './components/ui/BaseButton.vue'
+import InteractionHost from './components/ui/InteractionHost.vue'
 import { afterAuthentication } from './utils/authRedirect'
 import { pendingInvitation } from './utils/invitation'
 const route = useRoute()
@@ -43,4 +44,5 @@ onMounted(() => {
       <component :is="Component" />
     </div>
   </RouterView>
+  <InteractionHost />
 </template>

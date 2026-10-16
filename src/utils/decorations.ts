@@ -36,7 +36,7 @@ export function selectedPages(draft: DecorationDraft): DecorationPages | null {
   const ranges = parts
     .map((part): [number, number] => {
       const [start, end] = part.split(/\s*-\s*/).map(Number)
-      return [start, end ?? start]
+      return [start!, end ?? start!]
     })
     .sort((a, b) => a[0] - b[0])
   if (

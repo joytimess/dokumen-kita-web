@@ -9,8 +9,9 @@ import { authMode } from '../../services/http'
 import { authApi } from '../../services/auth.service'
 import { createRecoveryPrototype } from '../../services/recovery.mock'
 import { createPasswordRecovery } from '../../composables/usePasswordRecovery'
-import { expiredMessage, normalizeEmail } from '../../utils/recovery'
+import { expiredMessage, normalizeEmail, validateRecovery } from '../../utils/recovery'
 import { useAuthStore } from '../../stores/auth'
+import { confirmAction, notify } from '../../services/feedback'
 const auth = useAuthStore()
 const router = useRouter()
 const recovery = createPasswordRecovery(authMode === 'api' ? authApi : createRecoveryPrototype(), {
@@ -35,7 +36,21 @@ async function focusFirst() {
 }
 watch(stage, focusFirst)
 async function submit(resend = false) {
+  if (!resend && stage.value === 'password') {
+    errors.value = validateRecovery('password', fields.email, fields.otp, fields.password, fields.password_confirmation)
+    if (Object.keys(errors.value).length) {
+      notify.error(Object.values(errors.value)[0] || 'Periksa kembali data formulir.')
+      await nextTick()
+      form.value?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
+      return
+    }
+    if (!(await confirmAction('Simpan password baru untuk akun ini?', {
+      title: 'Ubah password', action: 'Simpan password',
+    }))) return
+  }
   await recovery.submit(resend)
+  if (Object.keys(errors.value).length)
+    notify.error(Object.values(errors.value)[0] || 'Periksa kembali data formulir.')
   await nextTick()
   form.value?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
 }

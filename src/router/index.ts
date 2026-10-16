@@ -28,22 +28,17 @@ const router = createRouter({
           meta: { title: 'Dokumen Saya' },
         },
         {
-          path: '/documents/new',
-          component: () => import('../views/workspace/NewDocumentView.vue'),
-          meta: { title: 'Buat dokumen' },
-        },
-        {
-          path: '/documents/:documentGuid',
+          path: '/documents/:documentGuid([0-9a-fA-F-]{36})',
           component: () => import('../views/workspace/DocumentDetailView.vue'),
           meta: { title: 'Detail dokumen' },
         },
         {
-          path: '/documents/:documentGuid/edit',
+          path: '/documents/:documentGuid([0-9a-fA-F-]{36})/edit',
           component: () => import('../views/workspace/DocumentEditorView.vue'),
           meta: { title: 'Penyusunan draft' },
         },
         {
-          path: '/documents/:documentGuid/versions/:versionGuid/view',
+          path: '/documents/:documentGuid([0-9a-fA-F-]{36})/versions/:versionGuid/view',
           component: () => import('../views/workspace/DocumentViewerView.vue'),
           meta: { title: 'Baca dokumen' },
         },

@@ -1,5 +1,11 @@
 <script setup lang="ts">
-defineProps<{ message: string; error?: boolean }>()
+import { watch } from 'vue'
+import { notify } from '../../services/feedback'
+
+const props = defineProps<{ message: string; error?: boolean }>()
+watch(() => [props.message, props.error] as const, ([message, error]) => {
+  if (message) notify[error ? 'error' : 'info'](message)
+}, { immediate: true })
 </script>
 <template>
   <div

@@ -1,6 +1,7 @@
 import { onUnmounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { workspaceError } from '../services/workspace.errors'
+import { notify } from '../services/feedback'
 export function useWorkspaceRequest() {
   const auth = useAuthStore()
   const error = ref('')
@@ -28,6 +29,7 @@ export function useWorkspaceRequest() {
           blockedUntil = feedback.retryAt
           error.value += ` Coba lagi dalam ${Math.max(0, Math.ceil((blockedUntil - Date.now()) / 1000))} detik.`
         }
+        notify.error(error.value)
         fields.value = feedback.fields
         if (feedback.status === 401) auth.user = null
       }

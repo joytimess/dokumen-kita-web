@@ -12,6 +12,7 @@ import type { EditorData } from '../../types/documents'
 import { editorPayload } from '../../utils/editor'
 import { editorDataToHtml, tiptapToEditorData, type TiptapNode } from '../../utils/tiptap'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { confirmAction } from '../../services/feedback'
 
 const props = defineProps<{ data: EditorData; readonly?: boolean }>()
 const emit = defineEmits<{ change: [data: EditorData]; pending: []; invalid: [message: string] }>()
@@ -64,6 +65,15 @@ function tableLinesHidden() {
 function toggleTableLines() {
   const table = selectedTable()
   if (table) editor.value?.chain().focus().updateAttributes('table', { showBorders: table.node.attrs.showBorders === false }).run()
+}
+async function removeTablePart(part: 'column' | 'row' | 'table') {
+  const label = { column: 'kolom', row: 'baris', table: 'tabel' }[part]
+  if (!(await confirmAction(`Hapus ${label} ini dari dokumen?`, {
+    title: `Hapus ${label}`, action: 'Hapus', danger: true,
+  }))) return
+  if (part === 'column') editor.value?.chain().focus().deleteColumn().run()
+  else if (part === 'row') editor.value?.chain().focus().deleteRow().run()
+  else editor.value?.chain().focus().deleteTable().run()
 }
 function updateTableCursor(event: MouseEvent) {
   const view = editor.value?.view
@@ -265,7 +275,7 @@ function showCellError(fields: Record<string, string>) {
   for (const [path, message] of Object.entries(fields)) {
     const match = /^editor_data\.blocks\.(\d+)\.data\.content\.(\d+)\.(\d+)(?:\.|$)/.exec(path)
     if (!match) continue
-    const [block, row, column] = match.slice(1).map(Number)
+    const block = Number(match[1]), row = Number(match[2]), column = Number(match[3])
     const tableIndex = props.data.blocks.slice(0, block).filter((item) => item.type === 'table').length
     const cell = surface.querySelectorAll('table')[tableIndex]?.querySelectorAll('tr')[row]?.children[column]
     if (!(cell instanceof HTMLElement)) continue
@@ -405,11 +415,11 @@ onUnmounted(() => {
         <button type="button" class="editor-tool" aria-label="Buat tabel" title="Buat tabel" @click="editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()"><span class="material-symbols-outlined" aria-hidden="true">table_chart</span></button>
         <button type="button" class="editor-tool" aria-label="Tambah kolom sebelum" title="Tambah kolom sebelum" :disabled="!editor.can().addColumnBefore()" @click="editor.chain().focus().addColumnBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_left</span></button>
         <button type="button" class="editor-tool" aria-label="Tambah kolom sesudah" title="Tambah kolom sesudah" :disabled="!editor.can().addColumnAfter()" @click="editor.chain().focus().addColumnAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_right</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus kolom" title="Hapus kolom" :disabled="!editor.can().deleteColumn()" @click="editor.chain().focus().deleteColumn().run()"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+        <button type="button" class="editor-tool" aria-label="Hapus kolom" title="Hapus kolom" :disabled="!editor.can().deleteColumn()" @click="removeTablePart('column')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
         <button type="button" class="editor-tool" aria-label="Tambah baris sebelum" title="Tambah baris sebelum" :disabled="!editor.can().addRowBefore()" @click="editor.chain().focus().addRowBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_above</span></button>
         <button type="button" class="editor-tool" aria-label="Tambah baris sesudah" title="Tambah baris sesudah" :disabled="!editor.can().addRowAfter()" @click="editor.chain().focus().addRowAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_below</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus baris" title="Hapus baris" :disabled="!editor.can().deleteRow()" @click="editor.chain().focus().deleteRow().run()"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus tabel" title="Hapus tabel" :disabled="!editor.can().deleteTable()" @click="editor.chain().focus().deleteTable().run()"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+        <button type="button" class="editor-tool" aria-label="Hapus baris" title="Hapus baris" :disabled="!editor.can().deleteRow()" @click="removeTablePart('row')"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span></button>
+        <button type="button" class="editor-tool" aria-label="Hapus tabel" title="Hapus tabel" :disabled="!editor.can().deleteTable()" @click="removeTablePart('table')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
         <button type="button" class="editor-tool" aria-label="Pindahkan tabel ke atas" title="Pindahkan tabel ke atas" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
         <button type="button" class="editor-tool" aria-label="Pindahkan tabel ke bawah" title="Pindahkan tabel ke bawah" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
         <button type="button" class="editor-tool" :aria-label="tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel'" :title="tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel'" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>

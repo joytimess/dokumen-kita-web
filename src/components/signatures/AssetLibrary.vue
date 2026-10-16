@@ -7,6 +7,7 @@ import SignatureCanvas from './SignatureCanvas.vue'
 import AssetImage from './AssetImage.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { confirmAction, notify } from '../../services/feedback'
 const props = defineProps<{ selectable?: boolean; selected?: string; disabled?: boolean }>()
 const emit = defineEmits<{ select: [asset: SignatureAsset] }>()
 const page = ref<Page<SignatureAsset>>(),
@@ -64,12 +65,16 @@ function uploadInput(event: Event) {
 }
 async function upload() {
   if (!file.value || props.disabled) return
+  if (!(await confirmAction('Simpan gambar ini sebagai aset tanda tangan?', {
+    title: 'Simpan tanda tangan', action: 'Simpan',
+  }))) return
   const result = await run(() => documentsApi.uploadAsset(file.value!, source.value))
   if (result) {
     file.value = undefined
     URL.revokeObjectURL(preview.value)
     preview.value = ''
     message.value = 'Aset tanda tangan tersimpan.'
+    notify.success(message.value)
     mode.value = 'saved'
     await load()
     if (props.selectable) emit('select', result)

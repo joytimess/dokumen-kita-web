@@ -6,6 +6,7 @@ import { documentsApi } from '../../services/documents.service'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { confirmAction, notify } from '../../services/feedback'
 const props = defineProps<{
   versionGuid: string
   assignments: Assignment[]
@@ -29,13 +30,14 @@ watch(
 )
 const dirty = computed(() => JSON.stringify(emails.value) !== baseline.value)
 watch(dirty, (value) => emit('dirty', value))
-function remove(index: number) {
+async function remove(index: number) {
   const assignment = props.assignments.find((a) => a.recipient_email === emails.value[index])
-  if (
-    assignment?.placeholders?.length &&
-    !window.confirm('Menghapus penerima juga menghapus semua posisi tanda tangannya. Lanjutkan?')
-  )
-    return
+  if (!(await confirmAction(
+    assignment?.placeholders?.length
+      ? 'Menghapus penerima juga menghapus semua posisi tanda tangannya. Lanjutkan?'
+      : 'Hapus penerima dari daftar?',
+    { title: 'Hapus penerima', action: 'Hapus', danger: true },
+  ))) return
   emails.value.splice(index, 1)
 }
 function move(index: number, delta: number) {
@@ -58,16 +60,18 @@ async function save() {
       a.placeholders?.length &&
       !emails.value.some((e) => e.trim().toLowerCase() === a.recipient_email),
   )
-  if (
-    removed.length &&
-    !window.confirm('Perubahan email akan menghapus posisi penerima lama. Lanjutkan?')
-  )
-    return
+  if (!(await confirmAction(
+    removed.length
+      ? 'Perubahan email akan menghapus posisi penerima lama. Simpan perubahan?'
+      : 'Simpan perubahan penerima dan urutannya?',
+    { title: 'Simpan penerima', action: 'Simpan', danger: !!removed.length },
+  ))) return
   if (!(await props.flush())) return
   const result = await run(() => documentsApi.signers(props.versionGuid, emails.value))
   if (result) {
     baseline.value = JSON.stringify(emails.value)
     emit('saved')
+    notify.success('Penerima tersimpan.')
   }
 }
 </script>

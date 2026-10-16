@@ -9,6 +9,7 @@ import PdfViewer from '../documents/PdfViewer.vue'
 import AssetLibrary from './AssetLibrary.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { confirmAction, notify } from '../../services/feedback'
 const props = defineProps<{
   versionGuid: string
   title: string
@@ -146,6 +147,9 @@ async function submit() {
     remaining.value
   )
     return
+  if (!(await confirmAction('Tandatangani dokumen dengan aset yang dipilih?', {
+    title: 'Konfirmasi tanda tangan', action: 'Tandatangani',
+  }))) return
   error.value = ''
   readBusy.value = true
   try {
@@ -179,6 +183,7 @@ async function submit() {
     revoke()
     message.value =
       'Persetujuan tanda tangan diterima server. Status versi ditentukan oleh pemeriksaan terbaru, bukan preview overlay.'
+    notify.success(message.value)
     emit('signed')
     await props.refresh?.()
   } catch (cause) {
@@ -208,12 +213,13 @@ async function requestRevision() {
     revisionBusy.value ||
     busy.value ||
     readBusy.value ||
-    pending.value ||
-    !window.confirm(
-      'Versi ini akan dihentikan. Semua penerima harus membaca dan menandatangani ulang draft baru. Lanjutkan?',
-    )
+    pending.value
   )
     return
+  if (!(await confirmAction(
+    'Versi ini akan dihentikan. Semua penerima harus membaca dan menandatangani ulang draft baru. Lanjutkan?',
+    { title: 'Minta revisi', action: 'Minta revisi', danger: true },
+  ))) return
   revisionBusy.value = true
   error.value = ''
   try {
@@ -221,6 +227,7 @@ async function requestRevision() {
     revisionResult.value = result
     blocked.value = true
     message.value = 'Permintaan revisi diterima. Versi ini tidak aktif lagi.'
+    notify.success(message.value)
     await props.refresh?.()
   } catch (cause) {
     const feedback = workspaceError(cause)
@@ -235,9 +242,12 @@ async function reject() {
   const reason = rejectionReason.value.trim()
   if (
     !canRequestRevision.value || reason.length < 3 || reason.length > 1000 ||
-    rejectionBusy.value || revisionBusy.value || busy.value || readBusy.value || pending.value ||
-    !window.confirm('Penolakan menghentikan versi ini dan membatalkan giliran signer berikutnya. Tidak ada draft revisi baru. Lanjutkan?')
+    rejectionBusy.value || revisionBusy.value || busy.value || readBusy.value || pending.value
   ) return
+  if (!(await confirmAction(
+    'Penolakan menghentikan versi ini dan membatalkan giliran signer berikutnya. Tidak ada draft revisi baru. Lanjutkan?',
+    { title: 'Tolak dokumen', action: 'Tolak', danger: true },
+  ))) return
   rejectionBusy.value = true
   error.value = ''
   try {
@@ -245,6 +255,7 @@ async function reject() {
     rejectionResult.value = true
     blocked.value = true
     message.value = 'Penolakan diterima. Versi ini dihentikan dan signer berikutnya tidak akan aktif.'
+    notify.success(message.value)
     await props.refresh()
   } catch (cause) {
     const feedback = workspaceError(cause)

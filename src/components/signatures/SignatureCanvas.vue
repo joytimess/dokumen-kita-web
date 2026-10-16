@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { confirmAction, notify } from '../../services/feedback'
 const emit = defineEmits<{ created: [file: File] }>()
 const canvas = ref<HTMLCanvasElement>()
 const ink = ref(false),
@@ -33,7 +34,10 @@ function move(event: PointerEvent) {
     ctx.stroke()
   }
 }
-function clear() {
+async function clear() {
+  if (ink.value && !(await confirmAction('Hapus coretan tanda tangan ini?', {
+    title: 'Hapus coretan', action: 'Hapus', danger: true,
+  }))) return
   canvas.value?.getContext('2d')?.clearRect(0, 0, 800, 300)
   ink.value = false
   error.value = ''
@@ -44,6 +48,7 @@ function use() {
   for (let i = 3; i < pixels.length; i += 4) if (pixels[i]! > 0) painted++
   if (painted < 10) {
     error.value = 'Buat coretan tanda tangan terlebih dahulu.'
+    notify.error(error.value)
     return
   }
   canvas.value!.toBlob((blob) => {

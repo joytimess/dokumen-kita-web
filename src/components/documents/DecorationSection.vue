@@ -21,40 +21,37 @@ const emit = defineEmits<{
 <template>
   <section class="rounded-xl border border-line bg-white p-5" :aria-label="title">
     <h2 class="font-semibold">{{ title }}</h2>
-    <p class="mt-2 text-xs text-muted">
-      Unggah gambar yang sudah dipotong. PNG, JPEG, atau WebP; maksimal 1200 × 400 piksel dan 2 MB.
-    </p>
-
-    <img
+    <div
       v-if="draft.imageUrl"
-      :src="draft.imageUrl"
-      :alt="`Pratinjau ${title.toLowerCase()}`"
-      class="mt-4 max-h-40 max-w-full object-contain"
-    />
-
-    <div class="mt-4 flex flex-wrap items-center gap-3">
-      <label
-        class="inline-flex min-h-11 cursor-pointer items-center rounded border border-line px-4 text-sm text-primary"
-      >
-        {{ hasSaved || draft.file ? 'Ganti gambar' : 'Unggah gambar' }}
-        <input
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          class="sr-only"
-          :disabled="!editable || busy || saving"
-          @change="emit('choose', $event)"
-        />
-      </label>
+      class="relative mt-4 flex min-h-28 items-center justify-center rounded border border-line bg-soft p-2"
+    >
+      <img
+        :src="draft.imageUrl"
+        :alt="`Pratinjau ${title.toLowerCase()}`"
+        class="max-h-40 max-w-[calc(100%-3rem)] object-contain"
+      />
       <button
-        v-if="hasSaved || draft.file"
         type="button"
-        class="min-h-11 text-sm text-error underline"
+        class="absolute top-0 right-0 grid size-11 place-items-center disabled:opacity-50"
+        :aria-label="kind === 'letterhead' ? 'Hapus kop surat' : 'Hapus footer'"
         :disabled="!editable || busy || saving"
         @click="emit('remove')"
       >
-        {{ kind === 'letterhead' ? 'Hapus kop' : 'Hapus footer' }}
+        <span class="grid size-5 place-items-center rounded-full bg-red-500 text-xs text-white" aria-hidden="true">×</span>
       </button>
     </div>
+    <input
+      v-else
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      class="mt-4 block max-w-full text-sm"
+      :aria-label="`Unggah gambar ${title.toLowerCase()}`"
+      :disabled="!editable || busy || saving"
+      @change="emit('choose', $event)"
+    />
+    <p class="mt-2 text-xs text-muted">
+      Unggah gambar yang sudah dipotong. PNG, JPEG, atau WebP; maksimal 1200 × 400 piksel dan 2 MB.
+    </p>
 
     <div v-if="(hasSaved || draft.file) && !draft.remove" class="mt-4 grid gap-3 text-sm">
       <label

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { documentsApi } from '../../services/documents.service'
 import { pendingInvitation, clearInvitation } from '../../utils/invitation'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
+import { confirmAction, notify } from '../../services/feedback'
 import type { Assignment } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
@@ -14,11 +15,15 @@ const router = useRouter()
 const { busy, error, run } = useWorkspaceRequest()
 async function claim() {
   if (!token.value || assignment.value) return
+  if (!(await confirmAction('Klaim undangan ini dengan akun yang sedang masuk?', {
+    title: 'Klaim undangan', action: 'Klaim',
+  }))) return
   const result = await run(() => documentsApi.claim(token.value))
   if (result) {
     assignment.value = result
     clearInvitation()
     token.value = ''
+    notify.success('Undangan berhasil diklaim.')
     if (result.document_guid) await router.replace(`/documents/${result.document_guid}/versions/${result.version_guid}/view`)
   }
 }

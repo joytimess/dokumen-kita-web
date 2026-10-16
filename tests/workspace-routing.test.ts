@@ -34,7 +34,12 @@ describe('Routing workspace dan regresi autentikasi', () => {
     expect(router.resolve('/').meta.workspace).toBeUndefined()
     for (const path of ['/forgot-password', '/email/verify', '/email/verified'])
       expect(router.resolve(path).meta.workspace).toBeUndefined()
-    expect(router.resolve('/documents/new').meta.workspace).toBe(true)
+    expect(router.resolve('/documents').meta.workspace).toBe(true)
+    expect(router.resolve('/documents/new').meta.title).toBe('Halaman tidak ditemukan')
+    const guid = '11111111-1111-4111-8111-111111111111'
+    expect(router.resolve(`/documents/${guid}`).meta.workspace).toBe(true)
+    expect(router.resolve(`/documents/${guid}/edit`).meta.title).toBe('Penyusunan draft')
+    expect(router.resolve(`/documents/${guid}/versions/${guid}/view`).meta.title).toBe('Baca dokumen')
     expect(router.resolve('/invitations/claim').meta.invitation).toBe(true)
   })
   it('landing tetap terbuka dengan sesi valid, login menuju dashboard', async () => {

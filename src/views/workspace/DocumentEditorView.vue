@@ -9,6 +9,7 @@ import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { useAuthStore } from '../../stores/auth'
 import { useDecorations } from '../../composables/useDecorations'
 import { useSourceFile } from '../../composables/useSourceFile'
+import { confirmAction, notify } from '../../services/feedback'
 import type {
   DocumentRecord,
   DocumentVersion,
@@ -45,6 +46,9 @@ const document = ref<DocumentRecord>(),
   title = ref(''),
   content = shallowRef<EditorData>({ blocks: [] })
 const editor = ref<InstanceType<typeof NativeEditor>>()
+const previewDialog = ref<HTMLDialogElement>()
+const previewOpen = ref(false)
+const previewRequested = ref(false)
 const saver =
   shallowRef<ReturnType<typeof createAutosave<{ title: string; editor_data: EditorData }>>>()
 const stage = ref(0),
@@ -151,6 +155,18 @@ const canPublish = computed(
       document.value!.current_version.preview_page_count!,
     ),
 )
+
+watch(() => saver.value?.error.value, (message) => {
+  if (message) notify.error(message)
+})
+
+watch([preview, () => document.value?.current_version.preview_status], ([ready, status]) => {
+  if (status === 'failed') previewRequested.value = false
+  else if (ready && previewRequested.value) {
+    previewRequested.value = false
+    showPreview()
+  }
+})
 
 function stopPolling() {
   pollEpoch++
@@ -347,6 +363,12 @@ function titleChanged() {
   if (editable.value) saver.value?.change({ title: title.value, editor_data: content.value })
 }
 
+function showPreview() {
+  if (!preview.value) return
+  previewDialog.value?.showModal()
+  previewOpen.value = true
+}
+
 async function flush() {
   if (!editable.value || !saver.value) return false
   const data = await editor.value?.capture()
@@ -357,6 +379,28 @@ async function flush() {
   }
   if (!(await saver.value.flush())) return false
   return saveDecorations()
+}
+
+async function saveManually() {
+  if (!(await confirmAction('Simpan perubahan draft dokumen?', { title: 'Simpan draft', action: 'Simpan' }))) return
+  if (await flush()) notify.success('Draft tersimpan.')
+}
+
+async function chooseDecorationImage(kind: 'letterhead' | 'footer', event: Event) {
+  const input = event.target as HTMLInputElement
+  const label = kind === 'letterhead' ? 'kop surat' : 'footer'
+  if (!(await confirmAction(`Gunakan gambar ini untuk ${label}? Perubahan akan disimpan otomatis.`, {
+    title: `Ubah ${label}`,
+    action: 'Gunakan gambar',
+  }))) { input.value = ''; return }
+  await chooseDecoration(kind, event)
+}
+
+async function deleteDecorationImage(kind: 'letterhead' | 'footer') {
+  const label = kind === 'letterhead' ? 'kop surat' : 'footer'
+  if (await confirmAction(`Hapus gambar ${label} dari draft?`, {
+    title: `Hapus ${label}`, action: 'Hapus', danger: true,
+  })) removeDecoration(kind)
 }
 
 async function rebuildPreview(versionGuid: string) {
@@ -382,19 +426,23 @@ async function switchStage(next: number) {
   if (next === stage.value || !(await flush())) return
   if (
     extraDirty.value &&
-    !window.confirm('Perubahan penerima/posisi belum tersimpan. Tinggalkan tahap ini?')
+    !(await confirmAction('Perubahan penerima/posisi belum tersimpan. Tinggalkan tahap ini?', {
+      title: 'Tinggalkan perubahan', action: 'Tinggalkan', danger: true,
+    }))
   )
     return
   extraDirty.value = false
+  previewRequested.value = false
   if (next === 2) await refreshMetadata()
   stage.value = next
 }
 
-async function makePreview() {
+async function makePreview(openWhenReady = false) {
   if (!(await flush())) return
   stopPolling()
   const result = await run(() => documentsApi.preview(document.value!.current_version.guid))
   if (result) {
+    previewRequested.value = openWhenReady
     applyVersion(result)
     reviewed.value = false
     startPolling()
@@ -405,9 +453,10 @@ async function publish() {
   if (!canPublish.value || !(await flush())) return
   if (
     !canPublish.value ||
-    !window.confirm(
+    !(await confirmAction(
       'Kirim versi ini? Isi, penerima, dan posisi akan dikunci untuk proses tanda tangan.',
-    )
+      { title: 'Kirim dokumen', action: 'Kirim' },
+    ))
   )
     return
   const result = await run(() => documentsApi.publish(document.value!.current_version.guid))
@@ -416,6 +465,7 @@ async function publish() {
     extraDirty.value = false
     message.value =
       'Proses tanda tangan dimulai. Permintaan undangan diterima; penerimaan email belum dipastikan.'
+    notify.success(message.value)
     await router.replace(`/documents/${guid}`)
   } else {
     await refreshMetadata()
@@ -479,9 +529,9 @@ async function leave() {
   if (!active || auth.user?.guid !== identity) return true
   if (!dirty.value) return true
   if ((await flush()) && !extraDirty.value) return true
-  return window.confirm(
-    'Perubahan belum tersimpan. Keluar dan kehilangan perubahan di halaman ini?',
-  )
+  return confirmAction('Perubahan belum tersimpan. Keluar dan kehilangan perubahan di halaman ini?', {
+    title: 'Keluar dari editor', action: 'Keluar', danger: true,
+  })
 }
 
 onBeforeRouteLeave(leave)
@@ -538,7 +588,7 @@ onUnmounted(() => {
       <BaseButton
         :loading="saver.saving.value || decorationSaving"
         :disabled="!editable || busy || decorationSaving"
-        @click="flush"
+        @click="saveManually"
         >{{ saver.error.value ? 'Coba simpan lagi' : 'Simpan' }}</BaseButton
       >
     </div>
@@ -596,6 +646,63 @@ onUnmounted(() => {
       </nav>
 
       <section v-show="stage === 0" class="grid min-w-0 gap-5">
+        <div class="grid min-w-0 gap-5 lg:grid-cols-2">
+          <SourceSection
+            class="min-w-0"
+            :version="document.current_version"
+            :editable="editable"
+            :busy="busy"
+            :import-uncertain="importUncertain"
+            :source-url="sourceUrl"
+            :source-busy="sourceBusy"
+            @upload="upload"
+            @retry="retryConversion"
+            @open="openSource"
+            @close="clearSource"
+          />
+          <section class="flex min-w-0 flex-col rounded-xl border border-line bg-white p-5">
+            <h2 class="font-semibold">Pratinjau PDF per halaman</h2>
+            <p class="my-3 text-sm text-muted">
+              Lihat susunan seluruh halaman sebelum menempatkan tanda tangan.
+            </p>
+            <BaseButton v-if="preview" class="self-start" @click="showPreview"
+              >Buka pratinjau PDF</BaseButton
+            >
+            <BaseButton
+              v-else
+              class="self-start"
+              :disabled="
+                busy ||
+                processing ||
+                ['queued', 'processing', 'failed'].includes(
+                  document.current_version.conversion_status ?? '',
+                )
+              "
+              @click="makePreview(true)"
+              >Buat dan buka pratinjau</BaseButton
+            >
+            <p
+              v-if="document.current_version.preview_status === 'queued'"
+              role="status"
+              class="mt-3 text-sm text-muted"
+            >
+              Pratinjau sedang dibuat.
+            </p>
+            <p
+              v-if="document.current_version.preview_status === 'failed'"
+              class="mt-4 rounded-lg border border-[#e8c4bf] bg-[#fff3f1] p-3 text-sm leading-5 text-error"
+            >
+              {{
+                document.current_version.preview_error_message ||
+                'Preview PDF gagal dibuat. Periksa pilihan halaman kop/footer lalu coba lagi.'
+              }}
+            </p>
+            <p class="mt-auto border-t border-line pt-4 text-xs leading-5 text-muted">
+              Posisi akhir kop, isi, footer, dan batas halaman mengikuti PDF pratinjau.
+            </p>
+          </section>
+        </div>
+
         <label class="grid gap-2 text-xs font-semibold"
           >Judul dokumen<input
             v-model="title"
@@ -613,8 +720,8 @@ onUnmounted(() => {
           :editable="editable"
           :busy="busy"
           :saving="decorationSaving"
-          @choose="chooseDecoration('letterhead', $event)"
-          @remove="removeDecoration('letterhead')"
+          @choose="chooseDecorationImage('letterhead', $event)"
+          @remove="deleteDecorationImage('letterhead')"
           @edit="reviewed = false"
         />
 
@@ -640,43 +747,36 @@ onUnmounted(() => {
           :editable="editable"
           :busy="busy"
           :saving="decorationSaving"
-          @choose="chooseDecoration('footer', $event)"
-          @remove="removeDecoration('footer')"
+          @choose="chooseDecorationImage('footer', $event)"
+          @remove="deleteDecorationImage('footer')"
           @edit="reviewed = false"
         />
-
-        <p class="text-xs text-muted">
-          Posisi akhir kop, isi, footer, dan batas halaman mengikuti PDF pratinjau.
-        </p>
-
-        <section v-if="preview" class="rounded-xl border border-line bg-white p-5">
-          <h2 class="mb-3 font-semibold">Preview PDF per halaman</h2>
-          <PdfViewer
-            :version-guid="document.current_version.guid"
-            :expected-hash="document.current_version.content_hash"
-          />
-        </section>
-
-        <p v-if="document.current_version.preview_status === 'failed'" class="text-sm text-error">
-          {{
-            document.current_version.preview_error_message ||
-            'Preview PDF gagal dibuat. Periksa pilihan halaman kop/footer lalu coba lagi.'
-          }}
-        </p>
-
-        <SourceSection
-          :version="document.current_version"
-          :editable="editable"
-          :busy="busy"
-          :import-uncertain="importUncertain"
-          :source-url="sourceUrl"
-          :source-busy="sourceBusy"
-          @upload="upload"
-          @retry="retryConversion"
-          @open="openSource"
-          @close="clearSource"
-        />
       </section>
+
+      <dialog
+        ref="previewDialog"
+        aria-labelledby="document-preview-title"
+        class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-6xl overflow-y-auto rounded-2xl border border-line bg-white p-4 text-ink shadow-2xl backdrop:bg-black/40 sm:p-6"
+        @close="previewOpen = false"
+      >
+        <div class="mb-4 flex items-center justify-between gap-4">
+          <h2 id="document-preview-title" class="text-xl font-semibold">
+            Pratinjau PDF per halaman
+          </h2>
+          <button
+            type="button"
+            class="min-h-11 rounded-lg border border-line px-4 text-sm"
+            @click="previewDialog?.close()"
+          >
+            Tutup
+          </button>
+        </div>
+        <PdfViewer
+          v-if="previewOpen && preview"
+          :version-guid="document.current_version.guid"
+          :expected-hash="document.current_version.content_hash"
+        />
+      </dialog>
 
       <SignersForm
         v-if="stage === 1"
@@ -729,7 +829,7 @@ onUnmounted(() => {
                 document.current_version.conversion_status ?? '',
               )
             "
-            @click="makePreview"
+            @click="makePreview()"
             >{{
               document.current_version.preview_status === 'queued'
                 ? 'Periksa pratinjau'
@@ -765,7 +865,7 @@ onUnmounted(() => {
               document.current_version.conversion_status ?? '',
             )
           "
-          @click="makePreview"
+          @click="makePreview()"
           >Buat pratinjau terbaru</BaseButton
         >
         <BaseButton :disabled="!canPublish || busy" :loading="busy" @click="publish"

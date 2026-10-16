@@ -13,6 +13,7 @@ import { validateAuth } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
 import { afterAuthentication } from '../../utils/authRedirect'
 import { pendingInvitation } from '../../utils/invitation'
+import { confirmAction, notify } from '../../services/feedback'
 import type { AuthKind, FieldErrors } from '../../types/auth'
 const props = defineProps<{ kind: AuthKind }>()
 const route = useRoute()
@@ -66,9 +67,13 @@ async function submit() {
   failed.value = false
   errors.value = validateAuth(props.kind, fields)
   if (Object.keys(errors.value).length) {
+    notify.error(Object.values(errors.value)[0] || 'Periksa kembali data formulir.')
     await focusError()
     return
   }
+  if (props.kind === 'register' && !(await confirmAction('Buat akun dengan data yang sudah diisi?', {
+    title: 'Buat akun', action: 'Buat akun',
+  }))) return
   busy.value = true
   try {
     if (authMode === 'prototype') message.value = await prototypeSubmit(props.kind)
@@ -88,6 +93,7 @@ async function submit() {
             }),
       )
       auth.sessionError = ''
+      notify.success(props.kind === 'login' ? 'Berhasil masuk.' : 'Akun berhasil dibuat.')
       await router.push(afterAuthentication(auth.user!.email_verified, pendingInvitation() ? '/invitations/claim' : route.query.redirect))
     }
   } catch (error) {
