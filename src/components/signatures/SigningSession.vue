@@ -35,6 +35,9 @@ const hash = ref(''),
 const revisionReason = ref(''),
   revisionBusy = ref(false),
   revisionResult = ref<RevisionResult>()
+const rejectionReason = ref(''),
+  rejectionBusy = ref(false),
+  rejectionResult = ref(false)
 const selected = ref<SignatureAsset>(),
   assetUrl = ref(''),
   assetOptions = ref<HTMLElement>()
@@ -228,6 +231,30 @@ async function requestRevision() {
     revisionBusy.value = false
   }
 }
+async function reject() {
+  const reason = rejectionReason.value.trim()
+  if (
+    !canRequestRevision.value || reason.length < 3 || reason.length > 1000 ||
+    rejectionBusy.value || revisionBusy.value || busy.value || readBusy.value || pending.value ||
+    !window.confirm('Penolakan menghentikan versi ini dan membatalkan giliran signer berikutnya. Tidak ada draft revisi baru. Lanjutkan?')
+  ) return
+  rejectionBusy.value = true
+  error.value = ''
+  try {
+    await documentsApi.reject(props.assignment!.guid, reason)
+    rejectionResult.value = true
+    blocked.value = true
+    message.value = 'Penolakan diterima. Versi ini dihentikan dan signer berikutnya tidak akan aktif.'
+    await props.refresh()
+  } catch (cause) {
+    const feedback = workspaceError(cause)
+    error.value = feedback.message
+    if (feedback.status === 401) auth.user = null
+    else if ([403, 404, 409, 422].includes(feedback.status ?? 0)) await props.refresh()
+  } finally {
+    rejectionBusy.value = false
+  }
+}
 onUnmounted(() => {
   active = false
   clearInterval(timer)
@@ -318,7 +345,7 @@ onUnmounted(() => {
           }}</BaseButton
         >
       </div>
-      <div v-if="canRequestRevision && !revisionResult" class="mt-6 border-t border-line pt-5">
+      <div v-if="canRequestRevision && !revisionResult && !rejectionResult" class="mt-6 border-t border-line pt-5">
         <h3 class="font-semibold">Minta revisi</h3>
         <p class="my-2 text-xs text-muted">
           Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.
@@ -337,6 +364,25 @@ onUnmounted(() => {
           @click="requestRevision"
           >Minta revisi</BaseButton
         >
+        <div class="mt-6 border-t border-line pt-5">
+          <h3 class="font-semibold">Tolak dokumen</h3>
+          <p class="my-2 text-xs text-muted">
+            Penolakan menghentikan versi aktif. Owner menerima alasannya, dan signer berikutnya tidak mendapat giliran.
+          </p>
+          <textarea
+            v-model="rejectionReason"
+            minlength="3"
+            maxlength="1000"
+            class="min-h-24 w-full rounded border border-line p-3 text-sm"
+            placeholder="Alasan penolakan (3–1000 karakter)"
+          />
+          <BaseButton
+            class="mt-3"
+            :loading="rejectionBusy"
+            :disabled="rejectionReason.trim().length < 3 || revisionBusy || busy || readBusy || !!pending"
+            @click="reject"
+          >Tolak versi ini</BaseButton>
+        </div>
       </div>
       <p
         v-else-if="

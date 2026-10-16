@@ -22,14 +22,31 @@ describe('konversi editor Tiptap dan blok backend', () => {
       ] }] },
       { type: 'table', content: [
         { type: 'tableRow', content: [{ type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Nama' }] }] }] },
-        { type: 'tableRow', content: [{ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Sari' }] }] }] },
+        { type: 'tableRow', content: [{ type: 'tableCell', content: [
+          { type: 'paragraph', content: [
+            { type: 'text', text: 'Sari', marks: [{ type: 'bold' }] },
+            { type: 'hardBreak' },
+            { type: 'text', text: 'tautan', marks: [{ type: 'link', attrs: { href: 'https://example.test' } }] },
+          ] },
+          { type: 'image', attrs: { src: 'data:image/png;base64,iVBORw0KGgo=', caption: 'Foto sel' } },
+        ] }] },
       ] },
       { type: 'image', attrs: { src: 'data:image/png;base64,YQ==', caption: 'Foto' } },
     ] })).toEqual({ blocks: [
       { type: 'header', data: { text: 'Judul', level: 2 } },
       { type: 'paragraph', data: { text: '<b>Tebal</b>' } },
       { type: 'list', data: { style: 'ordered', items: [{ content: 'Utama', items: ['Anak'] }] } },
-      { type: 'table', data: { withHeadings: true, content: [['Nama'], ['Sari']] } },
+      { type: 'table', data: { withHeadings: true, content: [
+        [[{ type: 'paragraph', content: [{ type: 'text', text: 'Nama' }] }]],
+        [[
+          { type: 'paragraph', content: [
+            { type: 'text', text: 'Sari', marks: [{ type: 'bold' }] },
+            { type: 'hardBreak' },
+            { type: 'text', text: 'tautan', marks: [{ type: 'link', attrs: { href: 'https://example.test' } }] },
+          ] },
+          { type: 'image', file: { url: 'data:image/png;base64,iVBORw0KGgo=' }, caption: 'Foto sel' },
+        ]],
+      ] } },
       { type: 'image', data: { file: { url: 'data:image/png;base64,YQ==' }, caption: 'Foto' } },
     ] })
   })

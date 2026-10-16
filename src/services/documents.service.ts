@@ -1,8 +1,10 @@
-import { apiOrigin, authMode, http, mutation } from './http'
+import { apiOrigin, authMode, csrf, http, mutation } from './http'
 import type {
   Assignment,
+  AuditEvent,
   DocumentRecord,
   DocumentVersion,
+  EmailNotification,
   DraftPayload,
   Page,
   Placeholder,
@@ -70,6 +72,14 @@ export const documentsApi = {
   finalize: (guid: string) => write<DocumentVersion>(`/versions/${guid}/finalize`, {}),
   requestRevision: (guid: string, reason: string) =>
     write<RevisionResult>(`/assignments/${guid}/revision-request`, { reason }),
+  reject: (guid: string, reason: string) =>
+    write<{ assignment_guid: string; assignment_status: string; version_guid: string; version_status: string; reason: string }>(
+      `/assignments/${guid}/reject`,
+      { reason },
+    ),
+  audit: (guid: string, page = 1) => get<Page<AuditEvent>>(`/documents/${guid}/audit`, { page, per_page: 25 }),
+  versions: (guid: string, page = 1) => get<Page<DocumentVersion>>(`/documents/${guid}/versions`, { page, per_page: 25 }),
+  emails: (guid: string, page = 1) => get<Page<EmailNotification>>(`/documents/${guid}/emails`, { page, per_page: 25 }),
   async source(guid: string, signal?: AbortSignal) {
     return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${guid}/source`, {
       responseType: 'blob', signal,

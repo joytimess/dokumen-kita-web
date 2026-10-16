@@ -6,7 +6,7 @@ import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { dateLabel, ownAssignment } from '../../utils/documents'
-import type { Assignment, DocumentRecord } from '../../types/documents'
+import type { Assignment, AuditEvent, DocumentRecord, DocumentVersion, EmailNotification, Page } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
@@ -15,7 +15,13 @@ const route = useRoute(),
 const document = ref<DocumentRecord>(),
   message = ref(''),
   clock = ref(Date.now()),
-  blocked = ref<Record<string, number>>({})
+  blocked = ref<Record<string, number>>({}),
+  audit = ref<Page<AuditEvent>>(),
+  versions = ref<Page<DocumentVersion>>(),
+  emails = ref<Page<EmailNotification>>(),
+  activityBusy = ref<Record<string, boolean>>({}),
+  activityErrors = ref<Record<string, string>>({}),
+  activityKey = ref('')
 const { busy, error, run } = useWorkspaceRequest()
 const owner = computed(() => document.value?.owner_guid === auth.user?.guid)
 const assignment = computed(() =>
@@ -29,13 +35,45 @@ const canRead = computed(
 )
 let lastLoad = 0,
   timer: ReturnType<typeof setInterval> | undefined, pollTimer: ReturnType<typeof setTimeout> | undefined, active = true, polls = 0
+const emailStatusLabel = (status: string) => ({ queued: 'Menunggu pengiriman', sent: 'Dikirim oleh transport', failed: 'Gagal', cancelled: 'Dibatalkan' })[status] ?? status
 async function load() {
   lastLoad = Date.now()
   const result = await run(() => documentsApi.detail(String(route.params.documentGuid)))
-  if (result && active) document.value = result
+  if (result && active) {
+    document.value = result
+    const key = `${result.guid}:${auth.user?.guid}`
+    if (key !== activityKey.value) {
+      activityKey.value = key
+      audit.value = undefined
+      versions.value = undefined
+      emails.value = undefined
+      void loadActivity('audit', 1)
+      void loadActivity('versions', 1)
+      if (result.owner_guid === auth.user?.guid) void loadActivity('emails', 1)
+    }
+  }
   clearTimeout(pollTimer)
   if (active && result?.current_version.status === 'finalizing' && !result.current_version.finalization_error_code && polls < 30)
     pollTimer = setTimeout(() => { if (globalThis.document.visibilityState === 'visible') { polls++; void load() } }, 5000)
+}
+async function loadActivity(kind: 'audit' | 'versions' | 'emails', page: number) {
+  if (!document.value) return
+  const guid = document.value.guid
+  const identity = auth.user?.guid
+  activityBusy.value[kind] = true
+  activityErrors.value[kind] = ''
+  try {
+    const result = await documentsApi[kind](document.value.guid, page)
+    if (!active || document.value?.guid !== guid || auth.user?.guid !== identity) return
+    if (kind === 'audit') audit.value = result as Page<AuditEvent>
+    else if (kind === 'versions') versions.value = result as Page<DocumentVersion>
+    else emails.value = result as Page<EmailNotification>
+  } catch (cause) {
+    if (active && document.value?.guid === guid && auth.user?.guid === identity)
+      activityErrors.value[kind] = workspaceError(cause).message
+  } finally {
+    if (active) activityBusy.value[kind] = false
+  }
 }
 async function retryFinalization() {
   if (!document.value) return
@@ -197,6 +235,56 @@ onUnmounted(() => {
         >
           {{ remaining(a.guid) ? `Tunggu ${remaining(a.guid)} detik` : 'Kirim ulang undangan' }}
         </button>
+      </div>
+    </section>
+    <section class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
+      <h2 class="mb-4 text-xl font-semibold">Audit aktivitas</h2>
+      <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">Memuat aktivitas…</p>
+      <FeedbackMessage :message="activityErrors.audit || ''" error />
+      <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">Belum ada aktivitas.</p>
+      <div v-for="event in audit?.data" :key="event.guid" class="border-t border-line py-3">
+        <p class="text-sm font-medium">{{ event.action }} · Versi {{ event.version_guid || '—' }}</p>
+        <p v-if="event.metadata?.reason" class="mt-1 text-sm">Alasan: {{ event.metadata.reason }}</p>
+        <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
+      </div>
+      <div v-if="audit && audit.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">Sebelumnya</button>
+        <span>Halaman {{ audit.meta.current_page }} dari {{ audit.meta.last_page }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page >= audit.meta.last_page" @click="loadActivity('audit', audit.meta.current_page + 1)">Berikutnya</button>
+      </div>
+    </section>
+    <section class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
+      <h2 class="mb-4 text-xl font-semibold">Riwayat versi</h2>
+      <p v-if="activityBusy.versions" role="status" class="text-sm text-muted">Memuat versi…</p>
+      <FeedbackMessage :message="activityErrors.versions || ''" error />
+      <p v-if="versions && !versions.data.length && !activityBusy.versions" class="text-sm text-muted">Belum ada riwayat versi.</p>
+      <div v-for="version in versions?.data" :key="version.guid" class="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3">
+        <div>
+          <p class="text-sm font-medium">Versi {{ version.version_number }} · {{ version.status }}</p>
+          <p class="text-xs text-muted">{{ dateLabel(version.updated_at) }}</p>
+        </div>
+        <RouterLink :to="`/documents/${document.guid}/versions/${version.guid}/view`" class="min-h-11 inline-flex items-center text-sm text-primary underline">Buka versi</RouterLink>
+      </div>
+      <div v-if="versions && versions.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page <= 1" @click="loadActivity('versions', versions.meta.current_page - 1)">Sebelumnya</button>
+        <span>Halaman {{ versions.meta.current_page }} dari {{ versions.meta.last_page }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page >= versions.meta.last_page" @click="loadActivity('versions', versions.meta.current_page + 1)">Berikutnya</button>
+      </div>
+    </section>
+    <section v-if="owner" class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
+      <h2 class="mb-4 text-xl font-semibold">Status email</h2>
+      <p class="mb-3 text-xs text-muted">Status sent berarti transport menerima email, bukan bukti email masuk ke inbox.</p>
+      <p v-if="activityBusy.emails" role="status" class="text-sm text-muted">Memuat status email…</p>
+      <FeedbackMessage :message="activityErrors.emails || ''" error />
+      <p v-if="emails && !emails.data.length && !activityBusy.emails" class="text-sm text-muted">Belum ada catatan email.</p>
+      <div v-for="email in emails?.data" :key="email.guid" class="border-t border-line py-3">
+        <p class="text-sm font-medium">{{ email.notification_type }} · {{ emailStatusLabel(email.status) }}</p>
+        <p class="mt-1 text-xs text-muted">{{ email.recipient_email }} · {{ dateLabel(email.sent_at || email.created_at) }} · Percobaan {{ email.attempt_count }}</p>
+      </div>
+      <div v-if="emails && emails.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page <= 1" @click="loadActivity('emails', emails.meta.current_page - 1)">Sebelumnya</button>
+        <span>Halaman {{ emails.meta.current_page }} dari {{ emails.meta.last_page }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page >= emails.meta.last_page" @click="loadActivity('emails', emails.meta.current_page + 1)">Berikutnya</button>
       </div>
     </section></template
   >

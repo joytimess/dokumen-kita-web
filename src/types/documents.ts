@@ -94,6 +94,27 @@ export interface RevisionResult {
   draft_version_guid: string
   draft_status: string
 }
+export interface AuditEvent {
+  guid: string
+  version_guid: string | null
+  actor_guid: string | null
+  action: string
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+export interface EmailNotification {
+  guid: string
+  version_guid: string
+  assignment_guid: string | null
+  recipient_email: string
+  notification_type: string
+  status: string
+  attempt_count: number
+  scheduled_at: string | null
+  sent_at: string | null
+  last_error_code: string | null
+  created_at: string
+}
 export interface SignaturePayload {
   asset_guid: string
   version_content_hash: string
