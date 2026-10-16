@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
 import { documentsApi } from '../../services/documents.service'
+import { t } from '../../services/workspace-language'
 const props = defineProps<{ guid: string }>()
 const url = ref(''),
   failed = ref(false)
@@ -32,9 +33,9 @@ onUnmounted(() => {
   <img
     v-if="url"
     :src="url"
-    alt="Tanda tangan milik Anda"
+    :alt="t('Tanda tangan milik Anda')"
     class="h-24 w-full object-contain"
   /><span v-else class="flex min-h-24 items-center justify-center text-xs text-muted">{{
-    failed ? 'Gambar belum dapat dimuat' : 'Memuat gambar…'
+    failed ? t('Gambar belum dapat dimuat') : t('Memuat gambar…')
   }}</span>
 </template>

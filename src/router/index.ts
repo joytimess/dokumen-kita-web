@@ -1,8 +1,10 @@
+import { watch } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { authMode } from '../services/http'
 import { rememberInvitation, pendingInvitation, clearInvitation } from '../utils/invitation'
 import { afterAuthentication } from '../utils/authRedirect'
+import { language, setWorkspaceActive, t } from '../services/workspace-language'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -46,6 +48,11 @@ const router = createRouter({
           path: '/signature-assets',
           component: () => import('../views/workspace/SignatureAssetsView.vue'),
           meta: { title: 'Tanda Tangan Saya' },
+        },
+        {
+          path: '/profile',
+          component: () => import('../views/workspace/ProfileView.vue'),
+          meta: { title: 'Profil' },
         },
         {
           path: '/invitations/claim',
@@ -121,8 +128,12 @@ router.beforeEach(async (to) => {
       pendingInvitation() ? '/invitations/claim' : to.query.redirect,
     )
 })
-router.afterEach((to) => {
-  document.title = `${String(to.meta.title)} · Dokumen Kita`
-})
+function updateTitle(to = router.currentRoute.value) {
+  const inWorkspace = Boolean(to.meta.workspace)
+  setWorkspaceActive(inWorkspace)
+  document.title = `${t(String(to.meta.title ?? 'Dokumen Kita'))} · Dokumen Kita`
+}
+router.afterEach((to) => updateTitle(to))
+watch(language, () => updateTitle())
 
 export default router

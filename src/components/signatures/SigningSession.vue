@@ -10,6 +10,8 @@ import AssetLibrary from './AssetLibrary.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { confirmAction, notify } from '../../services/feedback'
+import { formatNumber, t } from '../../services/workspace-language'
+import { statusLabel } from '../../utils/documents'
 const props = defineProps<{
   versionGuid: string
   title: string
@@ -275,7 +277,7 @@ onUnmounted(() => {
 </script>
 <template>
   <div class="grid min-w-0 gap-5">
-    <FeedbackMessage :message="message" /><FeedbackMessage :message="error" error />
+    <FeedbackMessage :message="t(message)" /><FeedbackMessage :message="t(error)" error />
     <PdfViewer
       :version-guid="versionGuid"
       :expected-hash="expectedHash"
@@ -285,30 +287,30 @@ onUnmounted(() => {
       @failure="pdfFailure"
     />
     <section v-if="assignment" class="rounded-xl border border-line bg-white p-5">
-      <h2 class="font-semibold">Konfirmasi baca dan tanda tangan</h2>
+      <h2 class="font-semibold">{{ t('Konfirmasi baca dan tanda tangan') }}</h2>
       <div v-if="revisionResult" class="mt-3 text-sm">
         <p>
-          Versi sebelumnya: {{ revisionResult.previous_status }}. Draft penerus:
-          {{ revisionResult.draft_status }}.
+          {{ t('Versi sebelumnya: :status. Draft penerus: :next.', {
+            status: statusLabel(revisionResult.previous_status),
+            next: statusLabel(revisionResult.draft_status),
+          }) }}
         </p>
         <RouterLink
           v-if="assignment.document_guid"
           :to="`/documents/${assignment.document_guid}`"
           class="mt-2 inline-block text-primary underline"
-          >Buka detail dokumen</RouterLink
+          >{{ t('Buka detail dokumen') }}</RouterLink
         >
       </div>
       <p v-if="completed || assignment.status === 'signed'" class="mt-3 text-sm">
-        Tanda tangan telah diterima. Tindakan baru tidak tersedia untuk persetujuan ini.
+        {{ t('Tanda tangan telah diterima. Tindakan baru tidak tersedia untuk persetujuan ini.') }}
       </p>
       <template v-else-if="canRequestRevision && !revisionResult"
         ><p class="my-3 text-sm text-muted">
-          Kunjungi semua halaman yang berhasil dirender dan capai akhir dokumen. Pencarian atau
-          lompat ke halaman terakhir saja tidak memenuhi syarat. Setelah itu, centang pernyataan
-          untuk memilih tanda tangan.
+          {{ t('Kunjungi semua halaman yang berhasil dirender dan capai akhir dokumen. Pencarian atau lompat ke halaman terakhir saja tidak memenuhi syarat. Setelah itu, centang pernyataan untuk memilih tanda tangan.') }}
         </p>
         <p v-if="!hash" class="my-3 text-sm text-error">
-          Hash versi resmi belum tersedia. Persetujuan diblokir.
+          {{ t('Hash versi resmi belum tersedia. Persetujuan diblokir.') }}
         </p>
         <label class="mt-4 mb-2 flex items-start gap-3 text-sm"
           ><input
@@ -316,17 +318,17 @@ onUnmounted(() => {
             type="checkbox"
             class="mt-1 accent-primary"
             :disabled="!eligible || !hash || busy || blocked"
-          />Saya telah membaca dokumen versi ini.</label
+          />{{ t('Saya telah membaca dokumen versi ini.') }}</label
         >
         <p v-if="remaining" class="mt-3 text-xs text-muted">
-          Coba kembali dalam {{ remaining }} detik.
+          {{ t('Coba kembali dalam :seconds detik.', { seconds: formatNumber(remaining) }) }}
         </p></template
       >
       <div
         v-if="canRequestRevision && eligible && confirmed && !completed && !revisionResult"
         ref="assetOptions"
         role="region"
-        aria-label="Pilih cara tanda tangan"
+        :aria-label="t('Pilih cara tanda tangan')"
         tabindex="-1"
         class="mt-2"
       >
@@ -337,62 +339,61 @@ onUnmounted(() => {
           @select="select"
         />
         <div v-if="assetUrl" class="my-4 rounded-lg border border-line bg-white p-4">
-          <img :src="assetUrl" alt="Tanda tangan pilihan Anda" class="h-24 w-full object-contain" />
+          <img :src="assetUrl" :alt="t('Tanda tangan pilihan Anda')" class="h-24 w-full object-contain" />
           <p class="mt-2 text-xs text-muted">
-            Preview ini diterapkan ke {{ overlays.length }} area milik Anda.
+            {{ t('Preview ini diterapkan ke :count area milik Anda.', { count: formatNumber(overlays.length) }) }}
           </p>
         </div>
         <FeedbackMessage :message="error" error />
         <p v-if="pending && !completed" class="my-3 text-xs text-muted">
-          Percobaan berikut mempertahankan aset, hash, dan kunci tindakan yang sama. Jangan membuat
-          tindakan baru saat hasil belum pasti.
+          {{ t('Percobaan berikut mempertahankan aset, hash, dan kunci tindakan yang sama. Jangan membuat tindakan baru saat hasil belum pasti.') }}
         </p>
         <BaseButton
           :loading="busy || readBusy"
           :disabled="!selected || !assetUrl || blocked || remaining > 0"
           @click="submit"
           >{{
-            pending ? 'Coba persetujuan yang sama' : 'Konfirmasi baca dan tanda tangani'
+            t(pending ? 'Coba persetujuan yang sama' : 'Konfirmasi baca dan tanda tangani')
           }}</BaseButton
         >
       </div>
       <div v-if="canRequestRevision && !revisionResult && !rejectionResult" class="mt-6 border-t border-line pt-5">
-        <h3 class="font-semibold">Minta revisi</h3>
+        <h3 class="font-semibold">{{ t('Minta revisi') }}</h3>
         <p class="my-2 text-xs text-muted">
-          Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.
+          {{ t('Versi ini akan dihentikan dan semua tanda tangan perlu diulang pada draft baru.') }}
         </p>
         <textarea
           v-model="revisionReason"
           minlength="3"
           maxlength="1000"
           class="min-h-28 w-full rounded border border-line p-3 text-sm"
-          placeholder="Alasan revisi (3–1000 karakter)"
+          :placeholder="t('Alasan revisi (3–1000 karakter)')"
         />
         <BaseButton
           class="mt-3"
           :loading="revisionBusy"
           :disabled="revisionReason.trim().length < 3 || busy || readBusy || !!pending"
           @click="requestRevision"
-          >Minta revisi</BaseButton
+          >{{ t('Minta revisi') }}</BaseButton
         >
         <div class="mt-6 border-t border-line pt-5">
-          <h3 class="font-semibold">Tolak dokumen</h3>
+          <h3 class="font-semibold">{{ t('Tolak dokumen') }}</h3>
           <p class="my-2 text-xs text-muted">
-            Penolakan menghentikan versi aktif. Owner menerima alasannya, dan signer berikutnya tidak mendapat giliran.
+            {{ t('Penolakan menghentikan versi aktif. Owner menerima alasannya, dan signer berikutnya tidak mendapat giliran.') }}
           </p>
           <textarea
             v-model="rejectionReason"
             minlength="3"
             maxlength="1000"
             class="min-h-24 w-full rounded border border-line p-3 text-sm"
-            placeholder="Alasan penolakan (3–1000 karakter)"
+            :placeholder="t('Alasan penolakan (3–1000 karakter)')"
           />
           <BaseButton
             class="mt-3"
             :loading="rejectionBusy"
             :disabled="rejectionReason.trim().length < 3 || revisionBusy || busy || readBusy || !!pending"
             @click="reject"
-          >Tolak versi ini</BaseButton>
+          >{{ t('Tolak versi ini') }}</BaseButton>
         </div>
       </div>
       <p
@@ -401,8 +402,7 @@ onUnmounted(() => {
         "
         class="mt-3 text-sm text-muted"
       >
-        Tindakan belum tersedia: undangan harus diklaim, email diverifikasi, dan giliran aktif pada
-        versi terbaru yang masih dalam proses.
+        {{ t('Tindakan belum tersedia: undangan harus diklaim, email diverifikasi, dan giliran aktif pada versi terbaru yang masih dalam proses.') }}
       </p>
     </section>
   </div>

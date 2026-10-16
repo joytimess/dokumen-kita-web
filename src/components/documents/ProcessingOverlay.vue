@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { t } from '../../services/workspace-language'
 
 const props = defineProps<{
   loading: boolean
@@ -8,10 +9,10 @@ const props = defineProps<{
 }>()
 
 const message = computed(() => {
-  if (props.loading) return 'Memuat dokumen…'
+  if (props.loading) return t('Memuat dokumen…')
   return ['queued', 'processing'].includes(props.conversionStatus ?? '')
-    ? 'Mengolah PDF/DOCX…'
-    : 'Membuat pratinjau…'
+    ? t('Mengolah PDF/DOCX…')
+    : t('Membuat pratinjau…')
 })
 </script>
 
@@ -27,11 +28,11 @@ const message = computed(() => {
         aria-hidden="true"
       />
       <p class="font-semibold text-ink">{{ message }}</p>
-      <p class="mt-2 text-sm text-muted">Hasil akan tampil otomatis setelah siap.</p>
+      <p class="mt-2 text-sm text-muted">{{ t('Hasil akan tampil otomatis setelah siap.') }}</p>
       <RouterLink
         :to="`/documents/${guid}`"
         class="mt-5 inline-block text-sm text-primary underline"
-        >Kembali ke detail dokumen</RouterLink
+        >{{ t('Kembali ke detail dokumen') }}</RouterLink
       >
     </div>
   </div>

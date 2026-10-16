@@ -34,6 +34,7 @@ import DecorationSection from '../../components/documents/DecorationSection.vue'
 import SourceSection from '../../components/documents/SourceSection.vue'
 import ReadOnlyNotice from '../../components/documents/ReadOnlyNotice.vue'
 import ProcessingOverlay from '../../components/documents/ProcessingOverlay.vue'
+import { formatNumber, t } from '../../services/workspace-language'
 
 const route = useRoute(),
   router = useRouter(),
@@ -568,46 +569,46 @@ onUnmounted(() => {
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
       <RouterLink :to="`/documents/${guid}`" class="text-xs text-primary underline"
-        >← Detail dokumen</RouterLink
+        >← {{ t('Detail dokumen') }}</RouterLink
       >
-      <h1 class="mt-3 text-3xl font-semibold">Siapkan dokumen.</h1>
+      <h1 class="mt-3 text-3xl font-semibold">{{ t('Siapkan dokumen.') }}</h1>
     </div>
     <div v-if="saver" class="flex flex-wrap items-center gap-4">
       <p class="text-xs text-muted" role="status" aria-live="polite">
         {{
-          saver.error.value ||
+          t(saver.error.value ||
           (saver.saving.value || decorationSaving
             ? 'Menyimpan…'
             : dirty
               ? 'Belum tersimpan'
               : saver.savedAt.value
-                ? `Tersimpan ${dateLabel(new Date(saver.savedAt.value).toISOString())}`
-                : 'Tersimpan')
+                ? t('Tersimpan :date', { date: dateLabel(new Date(saver.savedAt.value).toISOString()) })
+                : 'Tersimpan'))
         }}
       </p>
       <BaseButton
         :loading="saver.saving.value || decorationSaving"
         :disabled="!editable || busy || decorationSaving"
         @click="saveManually"
-        >{{ saver.error.value ? 'Coba simpan lagi' : 'Simpan' }}</BaseButton
+        >{{ saver.error.value ? t('Coba simpan lagi') : t('Simpan') }}</BaseButton
       >
     </div>
   </div>
 
-  <FeedbackMessage :message="error || editorError" error />
-  <FeedbackMessage :message="message" />
+  <FeedbackMessage :message="t(error || editorError)" error />
+  <FeedbackMessage :message="t(message)" />
   <button
     v-if="document"
     class="mb-4 min-h-11 text-xs text-primary underline"
     :disabled="busy || decorationSaving"
     @click="refreshMetadata"
   >
-    Periksa status versi
+    {{ t('Periksa status versi') }}
   </button>
-  <p v-for="(text, key) in fields" :key="key" class="mb-2 text-sm text-error">{{ text }}</p>
-  <p v-if="busy && !document" role="status">Memuat draft…</p>
+  <p v-for="(text, key) in fields" :key="key" class="mb-2 text-sm text-error">{{ t(text) }}</p>
+  <p v-if="busy && !document" role="status">{{ t('Memuat draft…') }}</p>
   <button v-if="error && !document" class="min-h-11 text-primary underline" @click="load">
-    Coba lagi
+    {{ t('Coba lagi') }}
   </button>
 
   <template v-if="document">
@@ -626,7 +627,7 @@ onUnmounted(() => {
     />
 
     <div :class="!editable ? 'pointer-events-none opacity-60' : ''">
-      <nav class="mb-6 flex flex-wrap gap-2" aria-label="Tahap penyusunan">
+      <nav class="mb-6 flex flex-wrap gap-2" :aria-label="t('Tahap penyusunan')">
         <button
           v-for="(label, index) in [
             'Isi / Impor',
@@ -641,7 +642,7 @@ onUnmounted(() => {
           :disabled="busy || !editable"
           @click="switchStage(index)"
         >
-          {{ index + 1 }}. {{ label }}
+          {{ formatNumber(index + 1) }}. {{ t(label) }}
         </button>
       </nav>
 
@@ -661,12 +662,12 @@ onUnmounted(() => {
             @close="clearSource"
           />
           <section class="flex min-w-0 flex-col rounded-xl border border-line bg-white p-5">
-            <h2 class="font-semibold">Pratinjau PDF per halaman</h2>
+            <h2 class="font-semibold">{{ t('Pratinjau PDF per halaman') }}</h2>
             <p class="my-3 text-sm text-muted">
-              Lihat susunan seluruh halaman sebelum menempatkan tanda tangan.
+              {{ t('Lihat susunan seluruh halaman sebelum menempatkan tanda tangan.') }}
             </p>
             <BaseButton v-if="preview" class="self-start" @click="showPreview"
-              >Buka pratinjau PDF</BaseButton
+              >{{ t('Buka pratinjau PDF') }}</BaseButton
             >
             <BaseButton
               v-else
@@ -679,32 +680,32 @@ onUnmounted(() => {
                 )
               "
               @click="makePreview(true)"
-              >Buat dan buka pratinjau</BaseButton
+              >{{ t('Buat dan buka pratinjau') }}</BaseButton
             >
             <p
               v-if="document.current_version.preview_status === 'queued'"
               role="status"
               class="mt-3 text-sm text-muted"
             >
-              Pratinjau sedang dibuat.
+              {{ t('Pratinjau sedang dibuat.') }}
             </p>
             <p
               v-if="document.current_version.preview_status === 'failed'"
               class="mt-4 rounded-lg border border-[#e8c4bf] bg-[#fff3f1] p-3 text-sm leading-5 text-error"
             >
               {{
-                document.current_version.preview_error_message ||
-                'Preview PDF gagal dibuat. Periksa pilihan halaman kop/footer lalu coba lagi.'
+                t(document.current_version.preview_error_message ||
+                  'Preview PDF gagal dibuat. Periksa pilihan halaman kop/footer lalu coba lagi.')
               }}
             </p>
             <p class="mt-auto border-t border-line pt-4 text-xs leading-5 text-muted">
-              Posisi akhir kop, isi, footer, dan batas halaman mengikuti PDF pratinjau.
+              {{ t('Posisi akhir kop, isi, footer, dan batas halaman mengikuti PDF pratinjau.') }}
             </p>
           </section>
         </div>
 
         <label class="grid gap-2 text-xs font-semibold"
-          >Judul dokumen<input
+          >{{ t('Judul dokumen') }}<input
             v-model="title"
             class="min-h-12 w-full rounded-lg border border-line bg-white px-4 text-lg"
             maxlength="255"
@@ -725,7 +726,7 @@ onUnmounted(() => {
           @edit="reviewed = false"
         />
 
-        <label class="grid gap-2 text-xs font-semibold"> Isi Dokumen </label>
+        <label class="grid gap-2 text-xs font-semibold">{{ t('Isi Dokumen') }}</label>
         <NativeEditor
           v-if="saver"
           :key="document.current_version.conversion_status"
@@ -761,14 +762,14 @@ onUnmounted(() => {
       >
         <div class="mb-4 flex items-center justify-between gap-4">
           <h2 id="document-preview-title" class="text-xl font-semibold">
-            Pratinjau PDF per halaman
+            {{ t('Pratinjau PDF per halaman') }}
           </h2>
           <button
             type="button"
             class="min-h-11 rounded-lg border border-line px-4 text-sm"
             @click="previewDialog?.close()"
           >
-            Tutup
+            {{ t('Tutup') }}
           </button>
         </div>
         <PdfViewer
@@ -800,25 +801,25 @@ onUnmounted(() => {
           @saved="positionsSaved"
         />
         <div v-else class="rounded-xl border border-line bg-white p-6">
-          <h2 class="font-semibold">Penempatan belum dapat dilanjutkan.</h2>
+          <h2 class="font-semibold">{{ t('Penempatan belum dapat dilanjutkan.') }}</h2>
           <p
             v-if="document.current_version.preview_status === 'queued'"
             role="status"
             class="mt-3 text-sm"
           >
-            Pratinjau sedang dibuat.
+            {{ t('Pratinjau sedang dibuat.') }}
           </p>
           <p
             v-if="document.current_version.preview_status === 'failed'"
             class="mt-3 text-sm text-error"
           >
             {{
-              document.current_version.preview_error_message ||
-              'Pembuatan pratinjau gagal. Periksa status lalu coba lagi.'
+              t(document.current_version.preview_error_message ||
+                'Pembuatan pratinjau gagal. Periksa status lalu coba lagi.')
             }}
           </p>
           <p class="mt-3 text-sm text-muted">
-            Simpan isi dan penerima, lalu buat pratinjau dari editor terbaru.
+            {{ t('Simpan isi dan penerima, lalu buat pratinjau dari editor terbaru.') }}
           </p>
           <BaseButton
             class="mt-4"
@@ -832,8 +833,8 @@ onUnmounted(() => {
             @click="makePreview()"
             >{{
               document.current_version.preview_status === 'queued'
-                ? 'Periksa pratinjau'
-                : 'Buat pratinjau terbaru'
+                ? t('Periksa pratinjau')
+                : t('Buat pratinjau terbaru')
             }}</BaseButton
           >
         </div>
@@ -842,19 +843,22 @@ onUnmounted(() => {
       <section v-if="stage === 3" class="rounded-xl border border-line bg-white p-5 sm:p-8">
         <h2 class="text-2xl font-semibold wrap-anywhere">{{ title }}</h2>
         <p class="my-4 text-sm text-muted">
-          Versi {{ document.current_version.version_number }} ·
-          {{ document.current_version.preview_page_count ?? 'Belum ada' }} halaman preview
+          {{ t('Versi :number · :count halaman preview', {
+            number: formatNumber(document.current_version.version_number),
+            count: document.current_version.preview_page_count === null || document.current_version.preview_page_count === undefined
+              ? t('Belum ada')
+              : formatNumber(document.current_version.preview_page_count ?? 0),
+          }) }}
         </p>
         <div
           v-for="a in document.current_version.assignments"
           :key="a.guid"
           class="my-3 rounded border border-line p-3 text-sm wrap-anywhere"
         >
-          {{ a.sequence_number }}. {{ a.recipient_email }} · {{ a.placeholders?.length ?? 0 }} area
+          {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }} · {{ t(':count area', { count: formatNumber(a.placeholders?.length ?? 0) }) }}
         </div>
         <p v-if="!canPublish" class="my-5 text-sm text-muted">
-          Kirim tersedia setelah isi tersimpan, snapshot siap, semua penerima memiliki area valid
-          yang tersimpan, dan posisi telah ditinjau pada tahap sebelumnya.
+          {{ t('Kirim tersedia setelah isi tersimpan, snapshot siap, semua penerima memiliki area valid yang tersimpan, dan posisi telah ditinjau pada tahap sebelumnya.') }}
         </p>
         <BaseButton
           class="mr-3"
@@ -866,13 +870,13 @@ onUnmounted(() => {
             )
           "
           @click="makePreview()"
-          >Buat pratinjau terbaru</BaseButton
+          >{{ t('Buat pratinjau terbaru') }}</BaseButton
         >
         <BaseButton :disabled="!canPublish || busy" :loading="busy" @click="publish"
-          >Kirim untuk tanda tangan</BaseButton
+          >{{ t('Kirim untuk tanda tangan') }}</BaseButton
         >
         <p class="mt-4 text-xs text-muted">
-          Versi akan dikunci. Keberhasilan tidak membuktikan email sudah diterima.
+          {{ t('Versi akan dikunci. Keberhasilan tidak membuktikan email sudah diterima.') }}
         </p>
       </section>
     </div>

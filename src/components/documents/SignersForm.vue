@@ -7,6 +7,7 @@ import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { confirmAction, notify } from '../../services/feedback'
+import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{
   versionGuid: string
   assignments: Assignment[]
@@ -77,11 +78,11 @@ async function save() {
 </script>
 <template>
   <section class="rounded-xl border border-line bg-white p-4 sm:p-6">
-    <h2 class="text-xl font-semibold">Penerima dan urutan</h2>
+    <h2 class="text-xl font-semibold">{{ t('Penerima dan urutan') }}</h2>
     <p class="mt-2 mb-6 text-sm text-muted">
-      Penerima pertama menandatangani lebih dulu. Email Anda sendiri juga dapat ditambahkan.
+      {{ t('Penerima pertama menandatangani lebih dulu. Email Anda sendiri juga dapat ditambahkan.') }}
     </p>
-    <FeedbackMessage :message="localError || error" error />
+    <FeedbackMessage :message="t(localError || error)" error />
     <p v-for="(message, key) in fields" :key="key" class="mb-2 text-xs text-error">{{ message }}</p>
     <div
       v-for="(_, index) in emails"
@@ -92,9 +93,9 @@ async function save() {
       @dragover.prevent
       @drop.prevent="drop(index)"
     >
-      <span class="text-xs text-muted">{{ index + 1 }}.</span
+      <span class="text-xs text-muted">{{ formatNumber(index + 1) }}.</span
       ><label class="min-w-0 flex-1"
-        ><span class="sr-only">Email penerima {{ index + 1 }}</span
+        ><span class="sr-only">{{ t('Email penerima :number', { number: formatNumber(index + 1) }) }}</span
         ><input
           v-model="emails[index]"
           type="email"
@@ -106,32 +107,32 @@ async function save() {
         <button
           class="min-h-11 min-w-11 rounded border border-line disabled:opacity-30"
           :disabled="busy || index === 0"
-          :aria-label="`Naikkan penerima ${index + 1}`"
+          :aria-label="t('Naikkan penerima :number', { number: formatNumber(index + 1) })"
           @click="move(index, -1)"
         >
           ↑</button
         ><button
           class="min-h-11 min-w-11 rounded border border-line disabled:opacity-30"
           :disabled="busy || index === emails.length - 1"
-          :aria-label="`Turunkan penerima ${index + 1}`"
+          :aria-label="t('Turunkan penerima :number', { number: formatNumber(index + 1) })"
           @click="move(index, 1)"
         >
           ↓</button
         ><button class="min-h-11 px-2 text-xs text-error" :disabled="busy" @click="remove(index)">
-          Hapus
+          {{ t('Hapus') }}
         </button>
       </div>
     </div>
-    <p v-if="!emails.length" class="mb-4 text-sm text-muted">Belum ada penerima.</p>
+    <p v-if="!emails.length" class="mb-4 text-sm text-muted">{{ t('Belum ada penerima.') }}</p>
     <div class="mt-5 flex flex-wrap gap-3">
       <button
         class="min-h-11 rounded-lg border border-line px-4 text-sm text-primary disabled:opacity-40"
         :disabled="busy || emails.length >= 50"
         @click="emails.push('')"
       >
-        + Tambah penerima</button
-      ><BaseButton :loading="busy" @click="save">Simpan penerima</BaseButton>
+        + {{ t('Tambah penerima') }}</button
+      ><BaseButton :loading="busy" @click="save">{{ t('Simpan penerima') }}</BaseButton>
     </div>
-    <p v-if="dirty" class="mt-3 text-xs text-muted">Perubahan penerima belum tersimpan.</p>
+    <p v-if="dirty" class="mt-3 text-xs text-muted">{{ t('Perubahan penerima belum tersimpan.') }}</p>
   </section>
 </template>

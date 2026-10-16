@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DecorationDraft, DecorationKind } from '../../utils/decorations'
+import { t } from '../../services/workspace-language'
 
 defineProps<{
   kind: DecorationKind
@@ -19,21 +20,21 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="rounded-xl border border-line bg-white p-5" :aria-label="title">
-    <h2 class="font-semibold">{{ title }}</h2>
+  <section class="rounded-xl border border-line bg-white p-5" :aria-label="t(title)">
+    <h2 class="font-semibold">{{ t(title) }}</h2>
     <div
       v-if="draft.imageUrl"
       class="relative mt-4 flex min-h-28 items-center justify-center rounded border border-line bg-soft p-2"
     >
       <img
         :src="draft.imageUrl"
-        :alt="`Pratinjau ${title.toLowerCase()}`"
+        :alt="t('Pratinjau :title', { title: title.toLowerCase() })"
         class="max-h-40 max-w-[calc(100%-3rem)] object-contain"
       />
       <button
         type="button"
         class="absolute top-0 right-0 grid size-11 place-items-center disabled:opacity-50"
-        :aria-label="kind === 'letterhead' ? 'Hapus kop surat' : 'Hapus footer'"
+        :aria-label="t(kind === 'letterhead' ? 'Hapus kop surat' : 'Hapus footer')"
         :disabled="!editable || busy || saving"
         @click="emit('remove')"
       >
@@ -45,29 +46,29 @@ const emit = defineEmits<{
       type="file"
       accept="image/png,image/jpeg,image/webp"
       class="mt-4 block max-w-full text-sm"
-      :aria-label="`Unggah gambar ${title.toLowerCase()}`"
+      :aria-label="t('Unggah gambar :title', { title: title.toLowerCase() })"
       :disabled="!editable || busy || saving"
       @change="emit('choose', $event)"
     />
     <p class="mt-2 text-xs text-muted">
-      Unggah gambar yang sudah dipotong. PNG, JPEG, atau WebP; maksimal 1200 × 400 piksel dan 2 MB.
+      {{ t('Unggah gambar yang sudah dipotong. PNG, JPEG, atau WebP; maksimal 1200 × 400 piksel dan 2 MB.') }}
     </p>
 
     <div v-if="(hasSaved || draft.file) && !draft.remove" class="mt-4 grid gap-3 text-sm">
       <label
-        >Cakupan halaman
+        >{{ t('Cakupan halaman') }}
         <select
           v-model="draft.mode"
           class="ml-2 min-h-11 rounded border border-line px-3"
           :disabled="saving"
           @change="emit('edit')"
         >
-          <option value="all">Semua halaman</option>
-          <option value="range">Halaman tertentu</option>
+          <option value="all">{{ t('Semua halaman') }}</option>
+          <option value="range">{{ t('Halaman tertentu') }}</option>
         </select>
       </label>
       <label v-if="draft.mode === 'range'" class="grid gap-1"
-        >Nomor/rentang halaman
+        >{{ t('Nomor/rentang halaman') }}
         <input
           v-model="draft.ranges"
           class="min-h-11 rounded border border-line px-3"

@@ -8,6 +8,7 @@ import type { DocumentVersion } from '../../types/documents'
 import SigningSession from '../../components/signatures/SigningSession.vue'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
+import { formatNumber, t } from '../../services/workspace-language'
 const route = useRoute(), auth = useAuthStore(), version = ref<DocumentVersion>()
 const { busy, error, run } = useWorkspaceRequest()
 const owner = computed(() => version.value?.editor_revision !== undefined)
@@ -37,22 +38,22 @@ onUnmounted(() => { active = false; request++; clearTimeout(timer) })
 <template>
   <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
     <div>
-      <RouterLink :to="`/documents/${route.params.documentGuid}`" class="text-xs text-primary underline">← Detail</RouterLink>
-      <h1 class="mt-3 text-2xl font-semibold wrap-anywhere">{{ version?.document_title || 'Baca dokumen' }}</h1>
-      <p class="mt-2 text-xs text-muted">Versi {{ version?.version_number }} · {{ version?.status === 'completed' ? 'PDF final dari server' : 'Pratinjau versi ini' }}</p>
+      <RouterLink :to="`/documents/${route.params.documentGuid}`" class="text-xs text-primary underline">← {{ t('Detail') }}</RouterLink>
+      <h1 class="mt-3 text-2xl font-semibold wrap-anywhere">{{ version?.document_title || t('Baca dokumen') }}</h1>
+      <p class="mt-2 text-xs text-muted">{{ t('Versi :number · :description', { number: version ? formatNumber(version.version_number) : '', description: version?.status === 'completed' ? t('PDF final dari server') : t('Pratinjau versi ini') }) }}</p>
     </div>
     <StatusBadge v-if="version" :status="version.status" />
   </div>
-  <FeedbackMessage :message="error" error />
-  <button class="mb-4 min-h-11 text-sm text-primary underline" :disabled="busy" @click="load">Periksa status</button>
-  <p v-if="busy && !version" role="status">Memuat metadata…</p>
-  <p v-if="version?.status === 'finalizing' && canView && version.preview_status === 'ready'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">PDF final sedang disiapkan. PDF di bawah ini adalah pratinjau versi yang ditandatangani.</p>
-  <p v-if="version?.status === 'revision_requested' || version?.status === 'superseded'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">Versi ini dihentikan untuk revisi. Tindakan lama tidak berlaku pada draft baru.</p>
-  <p v-if="assignment?.status === 'waiting'" class="rounded-xl border border-line bg-white p-6">Menunggu giliran. PDF, posisi, konfirmasi baca, dan tanda tangan belum tersedia.</p>
+  <FeedbackMessage :message="t(error)" error />
+  <button class="mb-4 min-h-11 text-sm text-primary underline" :disabled="busy" @click="load">{{ t('Periksa status') }}</button>
+  <p v-if="busy && !version" role="status">{{ t('Memuat metadata…') }}</p>
+  <p v-if="version?.status === 'finalizing' && canView && version.preview_status === 'ready'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">{{ t('PDF final sedang disiapkan. PDF di bawah ini adalah pratinjau versi yang ditandatangani.') }}</p>
+  <p v-if="version?.status === 'revision_requested' || version?.status === 'superseded'" class="mb-4 rounded-xl border border-line bg-white p-4 text-sm">{{ t('Versi ini dihentikan untuk revisi. Tindakan lama tidak berlaku pada draft baru.') }}</p>
+  <p v-if="assignment?.status === 'waiting'" class="rounded-xl border border-line bg-white p-6">{{ t('Menunggu giliran. PDF, posisi, konfirmasi baca, dan tanda tangan belum tersedia.') }}</p>
   <SigningSession v-else-if="version && canView && (version.preview_status === 'ready' || version.status === 'completed')"
     :key="`${version.guid}:${version.content_hash}:${version.status}`" :version-guid="version.guid"
-    :title="version.document_title || 'Dokumen'" :version-number="version.version_number"
+    :title="version.document_title || t('Dokumen')" :version-number="version.version_number"
     :assignment="assignment" :expected-hash="version.content_hash" :owner="owner"
     :status="version.status" :is-current="version.is_current" :refresh="load" />
-  <p v-else-if="version" class="rounded-xl border border-line bg-white p-6">PDF belum dapat dibuka untuk versi atau giliran ini.</p>
+  <p v-else-if="version" class="rounded-xl border border-line bg-white p-6">{{ t('PDF belum dapat dibuka untuk versi atau giliran ini.') }}</p>
 </template>

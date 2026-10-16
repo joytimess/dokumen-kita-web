@@ -12,6 +12,7 @@ import type { EditorData } from '../../types/documents'
 import { editorPayload } from '../../utils/editor'
 import { editorDataToHtml, tiptapToEditorData, type TiptapNode } from '../../utils/tiptap'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { t } from '../../services/workspace-language'
 import { confirmAction } from '../../services/feedback'
 
 const props = defineProps<{ data: EditorData; readonly?: boolean }>()
@@ -300,7 +301,7 @@ function formatBlock(event: Event) {
 }
 function link() {
   if (!editor.value || locked) return
-  const href = window.prompt('Alamat tautan HTTPS, HTTP, atau mailto:', editor.value.getAttributes('link').href ?? 'https://')
+  const href = window.prompt(t('Alamat tautan HTTPS, HTTP, atau mailto:'), editor.value.getAttributes('link').href ?? 'https://')
   if (href === null) return
   if (!href.trim()) { editor.value.chain().focus().unsetLink().run(); return }
   if (!/^(https?:\/\/|mailto:)/i.test(href.trim())) {
@@ -311,7 +312,7 @@ function link() {
 }
 function caption() {
   if (!editor.value?.isActive('image') || locked) return
-  const text = window.prompt('Keterangan gambar:', String(editor.value.getAttributes('image').caption ?? ''))
+  const text = window.prompt(t('Keterangan gambar:'), String(editor.value.getAttributes('image').caption ?? ''))
   if (text !== null) editor.value.chain().focus().updateAttributes('image', { caption: text }).run()
 }
 async function addImage(event: Event) {
@@ -386,47 +387,47 @@ onUnmounted(() => {
 </script>
 <template>
   <div>
-    <FeedbackMessage :message="error" error />
-    <div v-if="editor && !readonly" role="toolbar" aria-label="Format dokumen" class="mb-2 flex flex-wrap items-center gap-1 rounded-xl border border-line bg-white p-2 text-ink">
-      <select class="h-10 rounded border border-line bg-white px-2 text-sm" aria-label="Jenis paragraf" title="Jenis paragraf" @change="formatBlock">
-        <option value="0">Normal</option>
-        <option v-for="level in 6" :key="level" :value="level">Judul {{ level }}</option>
+    <FeedbackMessage :message="t(error)" error />
+    <div v-if="editor && !readonly" role="toolbar" :aria-label="t('Format dokumen')" class="mb-2 flex flex-wrap items-center gap-1 rounded-xl border border-line bg-white p-2 text-ink">
+      <select class="h-10 rounded border border-line bg-white px-2 text-sm" :aria-label="t('Jenis paragraf')" :title="t('Jenis paragraf')" @change="formatBlock">
+        <option value="0">{{ t('Normal') }}</option>
+        <option v-for="level in 6" :key="level" :value="level">{{ t('Judul :number', { number: level }) }}</option>
       </select>
-      <div class="flex rounded border border-line" role="group" aria-label="Gaya teks">
-        <button type="button" class="editor-tool" aria-label="Tebal" title="Tebal" :aria-pressed="active('bold')" @click="editor.chain().focus().toggleBold().run()"><span class="material-symbols-outlined" aria-hidden="true">format_bold</span></button>
-        <button type="button" class="editor-tool" aria-label="Miring" title="Miring" :aria-pressed="active('italic')" @click="editor.chain().focus().toggleItalic().run()"><span class="material-symbols-outlined" aria-hidden="true">format_italic</span></button>
-        <button type="button" class="editor-tool" aria-label="Garis bawah" title="Garis bawah" :aria-pressed="active('underline')" @click="editor.chain().focus().toggleUnderline().run()"><span class="material-symbols-outlined" aria-hidden="true">format_underlined</span></button>
-        <button type="button" class="editor-tool" aria-label="Sorot" title="Sorot" :aria-pressed="active('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><span class="material-symbols-outlined" aria-hidden="true">ink_highlighter</span></button>
+      <div class="flex rounded border border-line" role="group" :aria-label="t('Gaya teks')">
+        <button type="button" class="editor-tool" :aria-label="t('Tebal')" :title="t('Tebal')" :aria-pressed="active('bold')" @click="editor.chain().focus().toggleBold().run()"><span class="material-symbols-outlined" aria-hidden="true">format_bold</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Miring')" :title="t('Miring')" :aria-pressed="active('italic')" @click="editor.chain().focus().toggleItalic().run()"><span class="material-symbols-outlined" aria-hidden="true">format_italic</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Garis bawah')" :title="t('Garis bawah')" :aria-pressed="active('underline')" @click="editor.chain().focus().toggleUnderline().run()"><span class="material-symbols-outlined" aria-hidden="true">format_underlined</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Sorot')" :title="t('Sorot')" :aria-pressed="active('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><span class="material-symbols-outlined" aria-hidden="true">ink_highlighter</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" aria-label="Perataan paragraf">
-        <button type="button" class="editor-tool" aria-label="Rata kiri" title="Rata kiri" :aria-pressed="aligned('left')" @click="editor.chain().focus().setTextAlign('left').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_left</span></button>
-        <button type="button" class="editor-tool" aria-label="Rata tengah" title="Rata tengah" :aria-pressed="aligned('center')" @click="editor.chain().focus().setTextAlign('center').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_center</span></button>
-        <button type="button" class="editor-tool" aria-label="Rata kanan" title="Rata kanan" :aria-pressed="aligned('right')" @click="editor.chain().focus().setTextAlign('right').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_right</span></button>
-        <button type="button" class="editor-tool" aria-label="Rata kiri-kanan" title="Rata kiri-kanan (justify)" :aria-pressed="aligned('justify')" @click="editor.chain().focus().setTextAlign('justify').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_justify</span></button>
+      <div class="flex rounded border border-line" role="group" :aria-label="t('Perataan paragraf')">
+        <button type="button" class="editor-tool" :aria-label="t('Rata kiri')" :title="t('Rata kiri')" :aria-pressed="aligned('left')" @click="editor.chain().focus().setTextAlign('left').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_left</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Rata tengah')" :title="t('Rata tengah')" :aria-pressed="aligned('center')" @click="editor.chain().focus().setTextAlign('center').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_center</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Rata kanan')" :title="t('Rata kanan')" :aria-pressed="aligned('right')" @click="editor.chain().focus().setTextAlign('right').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_right</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Rata kiri-kanan')" :title="t('Rata kiri-kanan')" :aria-pressed="aligned('justify')" @click="editor.chain().focus().setTextAlign('justify').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_justify</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" aria-label="Daftar dan tautan">
-        <button type="button" class="editor-tool" aria-label="Daftar poin" title="Daftar poin" :aria-pressed="active('bulletList')" @click="editor.chain().focus().toggleBulletList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_bulleted</span></button>
-        <button type="button" class="editor-tool" aria-label="Daftar nomor" title="Daftar nomor" :aria-pressed="active('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_numbered</span></button>
-        <button type="button" class="editor-tool" aria-label="Kurangi tingkat daftar" title="Kurangi tingkat daftar (Shift+Tab)" :disabled="!editor.can().liftListItem('listItem')" @click="editor.chain().focus().liftListItem('listItem').run()"><span class="material-symbols-outlined" aria-hidden="true">format_indent_decrease</span></button>
-        <button type="button" class="editor-tool" aria-label="Tambah tingkat daftar" title="Tambah tingkat daftar (Tab)" :disabled="listDepth() >= 3 || !editor.can().sinkListItem('listItem')" @click="indentList"><span class="material-symbols-outlined" aria-hidden="true">format_indent_increase</span></button>
-        <button type="button" class="editor-tool" aria-label="Tautan" title="Tautan" @click="link"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>
+      <div class="flex rounded border border-line" role="group" :aria-label="t('Daftar dan tautan')">
+        <button type="button" class="editor-tool" :aria-label="t('Daftar poin')" :title="t('Daftar poin')" :aria-pressed="active('bulletList')" @click="editor.chain().focus().toggleBulletList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_bulleted</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Daftar nomor')" :title="t('Daftar nomor')" :aria-pressed="active('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_numbered</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Kurangi tingkat daftar')" :title="t('Kurangi tingkat daftar (Shift+Tab)')" :disabled="!editor.can().liftListItem('listItem')" @click="editor.chain().focus().liftListItem('listItem').run()"><span class="material-symbols-outlined" aria-hidden="true">format_indent_decrease</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tambah tingkat daftar')" :title="t('Tambah tingkat daftar (Tab)')" :disabled="listDepth() >= 3 || !editor.can().sinkListItem('listItem')" @click="indentList"><span class="material-symbols-outlined" aria-hidden="true">format_indent_increase</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tautan')" :title="t('Tautan')" @click="link"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" aria-label="Tabel">
-        <button type="button" class="editor-tool" aria-label="Buat tabel" title="Buat tabel" @click="editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()"><span class="material-symbols-outlined" aria-hidden="true">table_chart</span></button>
-        <button type="button" class="editor-tool" aria-label="Tambah kolom sebelum" title="Tambah kolom sebelum" :disabled="!editor.can().addColumnBefore()" @click="editor.chain().focus().addColumnBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_left</span></button>
-        <button type="button" class="editor-tool" aria-label="Tambah kolom sesudah" title="Tambah kolom sesudah" :disabled="!editor.can().addColumnAfter()" @click="editor.chain().focus().addColumnAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_right</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus kolom" title="Hapus kolom" :disabled="!editor.can().deleteColumn()" @click="removeTablePart('column')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
-        <button type="button" class="editor-tool" aria-label="Tambah baris sebelum" title="Tambah baris sebelum" :disabled="!editor.can().addRowBefore()" @click="editor.chain().focus().addRowBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_above</span></button>
-        <button type="button" class="editor-tool" aria-label="Tambah baris sesudah" title="Tambah baris sesudah" :disabled="!editor.can().addRowAfter()" @click="editor.chain().focus().addRowAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_below</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus baris" title="Hapus baris" :disabled="!editor.can().deleteRow()" @click="removeTablePart('row')"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span></button>
-        <button type="button" class="editor-tool" aria-label="Hapus tabel" title="Hapus tabel" :disabled="!editor.can().deleteTable()" @click="removeTablePart('table')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
-        <button type="button" class="editor-tool" aria-label="Pindahkan tabel ke atas" title="Pindahkan tabel ke atas" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-        <button type="button" class="editor-tool" aria-label="Pindahkan tabel ke bawah" title="Pindahkan tabel ke bawah" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
-        <button type="button" class="editor-tool" :aria-label="tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel'" :title="tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel'" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>
+      <div class="flex rounded border border-line" role="group" :aria-label="t('Tabel')">
+        <button type="button" class="editor-tool" :aria-label="t('Buat tabel')" :title="t('Buat tabel')" @click="editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()"><span class="material-symbols-outlined" aria-hidden="true">table_chart</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tambah kolom sebelum')" :title="t('Tambah kolom sebelum')" :disabled="!editor.can().addColumnBefore()" @click="editor.chain().focus().addColumnBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_left</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tambah kolom sesudah')" :title="t('Tambah kolom sesudah')" :disabled="!editor.can().addColumnAfter()" @click="editor.chain().focus().addColumnAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_right</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Hapus kolom')" :title="t('Hapus kolom')" :disabled="!editor.can().deleteColumn()" @click="removeTablePart('column')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tambah baris sebelum')" :title="t('Tambah baris sebelum')" :disabled="!editor.can().addRowBefore()" @click="editor.chain().focus().addRowBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_above</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Tambah baris sesudah')" :title="t('Tambah baris sesudah')" :disabled="!editor.can().addRowAfter()" @click="editor.chain().focus().addRowAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_below</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Hapus baris')" :title="t('Hapus baris')" :disabled="!editor.can().deleteRow()" @click="removeTablePart('row')"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Hapus tabel')" :title="t('Hapus tabel')" :disabled="!editor.can().deleteTable()" @click="removeTablePart('table')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke atas')" :title="t('Pindahkan tabel ke atas')" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke bawah')" :title="t('Pindahkan tabel ke bawah')" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+        <button type="button" class="editor-tool" :aria-label="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :title="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" aria-label="Gambar">
-        <button type="button" class="editor-tool" aria-label="Tambah gambar" title="Tambah gambar" @click="fileInput?.click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span></button>
-        <button type="button" class="editor-tool" aria-label="Keterangan gambar" title="Keterangan gambar" :disabled="!active('image')" @click="caption"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span></button>
+      <div class="flex rounded border border-line" role="group" :aria-label="t('Gambar')">
+        <button type="button" class="editor-tool" :aria-label="t('Tambah gambar')" :title="t('Tambah gambar')" @click="fileInput?.click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Keterangan gambar')" :title="t('Keterangan gambar')" :disabled="!active('image')" @click="caption"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span></button>
       </div>
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="addImage">
     </div>

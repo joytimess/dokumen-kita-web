@@ -6,7 +6,8 @@ import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { confirmAction, notify } from '../../services/feedback'
-import { dateLabel, ownAssignment } from '../../utils/documents'
+import { dateLabel, ownAssignment, statusLabel } from '../../utils/documents'
+import { formatNumber, t } from '../../services/workspace-language'
 import type { Assignment, AuditEvent, DocumentRecord, DocumentVersion, EmailNotification, Page } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
@@ -36,7 +37,7 @@ const canRead = computed(
 )
 let lastLoad = 0,
   timer: ReturnType<typeof setInterval> | undefined, pollTimer: ReturnType<typeof setTimeout> | undefined, active = true, polls = 0
-const emailStatusLabel = (status: string) => ({ queued: 'Menunggu pengiriman', sent: 'Dikirim oleh transport', failed: 'Gagal', cancelled: 'Dibatalkan' })[status] ?? status
+const emailStatusLabel = (status: string) => t(({ queued: 'Menunggu pengiriman', sent: 'Dikirim oleh transport', failed: 'Gagal', cancelled: 'Dibatalkan' })[status] ?? status)
 async function load() {
   lastLoad = Date.now()
   const result = await run(() => documentsApi.detail(String(route.params.documentGuid)))
@@ -78,8 +79,8 @@ async function loadActivity(kind: 'audit' | 'versions' | 'emails', page: number)
 }
 async function retryFinalization() {
   if (!document.value) return
-  if (!(await confirmAction('Susun ulang PDF final dokumen ini?', {
-    title: 'Susun PDF final', action: 'Susun ulang',
+  if (!(await confirmAction(t('Susun ulang PDF final dokumen ini?'), {
+    title: t('Susun PDF final'), action: t('Susun ulang'),
   }))) return
   const result = await run(() => documentsApi.finalize(document.value!.current_version.guid))
   if (result) { message.value = 'Permintaan penyusunan PDF final diterima.'; notify.success(message.value); await load() }
@@ -97,8 +98,8 @@ function focus() {
 async function resend(a: Assignment) {
   if (
     (blocked.value[a.guid] ?? 0) > clock.value ||
-    !(await confirmAction('Minta ulang undangan? Link lama akan diganti.', {
-      title: 'Kirim ulang undangan', action: 'Kirim ulang',
+    !(await confirmAction(t('Minta ulang undangan? Link lama akan diganti.'), {
+      title: t('Kirim ulang undangan'), action: t('Kirim ulang'),
     }))
   )
     return
@@ -135,43 +136,42 @@ onUnmounted(() => {
 <template>
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
-      <RouterLink to="/documents" class="text-xs text-primary underline">← Dokumen Saya</RouterLink>
+      <RouterLink to="/documents" class="text-xs text-primary underline">← {{ t('Dokumen Saya') }}</RouterLink>
       <h1 class="mt-3 text-3xl font-semibold wrap-anywhere">
-        {{ document?.title || 'Detail dokumen' }}
+        {{ document?.title || t('Detail dokumen') }}
       </h1>
     </div>
-    <BaseButton :loading="busy" @click="load">Periksa status</BaseButton>
+    <BaseButton :loading="busy" @click="load">{{ t('Periksa status') }}</BaseButton>
   </div>
-  <FeedbackMessage :message="error" error /><FeedbackMessage :message="message" />
-  <p v-if="busy && !document" role="status" class="py-8 text-sm text-muted">Memuat dokumen…</p>
+  <FeedbackMessage :message="t(error)" error /><FeedbackMessage :message="t(message)" />
+  <p v-if="busy && !document" role="status" class="py-8 text-sm text-muted">{{ t('Memuat dokumen…') }}</p>
   <template v-if="document"
     ><section class="rounded-xl border border-line bg-white p-5 sm:p-8">
       <div class="mb-5 flex flex-wrap items-center gap-3">
         <StatusBadge :status="document.current_version.status" /><span class="text-xs text-muted"
-          >Versi {{ document.current_version.version_number }}</span
+          >{{ t('Versi :number', { number: formatNumber(document.current_version.version_number) }) }}</span
         >
       </div>
       <p class="text-xs text-muted">
-        Dibuat {{ dateLabel(document.created_at) }} · Diperbarui
-        {{ dateLabel(document.updated_at) }}
+        {{ t('Dibuat :date · Diperbarui :updated', { date: dateLabel(document.created_at), updated: dateLabel(document.updated_at) }) }}
       </p>
       <p
         v-if="document.current_version.status === 'finalizing'"
         class="mt-5 text-sm leading-relaxed"
       >
-        Semua persetujuan diterima. PDF final sedang disiapkan.
+        {{ t('Semua persetujuan diterima. PDF final sedang disiapkan.') }}
       </p>
-      <p v-if="owner && document.current_version.finalization_error_code" class="mt-3 text-sm text-error">Penyusunan PDF final gagal. Periksa status lalu coba lagi.</p>
-      <BaseButton v-if="owner && document.current_version.status === 'finalizing' && document.current_version.finalization_error_code" class="mt-3" :loading="busy" @click="retryFinalization">Coba susun PDF final lagi</BaseButton>
+      <p v-if="owner && document.current_version.finalization_error_code" class="mt-3 text-sm text-error">{{ t('Penyusunan PDF final gagal. Periksa status lalu coba lagi.') }}</p>
+      <BaseButton v-if="owner && document.current_version.status === 'finalizing' && document.current_version.finalization_error_code" class="mt-3" :loading="busy" @click="retryFinalization">{{ t('Coba susun PDF final lagi') }}</BaseButton>
       <p v-if="assignment?.status === 'waiting'" class="mt-5 text-sm">
-        Anda menunggu giliran. PDF dan posisi tanda tangan belum dibuka melalui hak penerima.
+        {{ t('Anda menunggu giliran. PDF dan posisi tanda tangan belum dibuka melalui hak penerima.') }}
       </p>
       <div class="mt-6 flex flex-wrap gap-4">
         <RouterLink
           v-if="owner && document.current_version.status === 'draft'"
           :to="`/documents/${document.guid}/edit`"
           class="inline-flex min-h-12 items-center rounded-lg bg-primary px-5 text-sm text-white"
-          >Lanjutkan penyusunan</RouterLink
+          >{{ t('Lanjutkan penyusunan') }}</RouterLink
         ><RouterLink
           v-if="
             canRead &&
@@ -182,8 +182,8 @@ onUnmounted(() => {
           class="inline-flex min-h-12 items-center rounded-lg border border-line px-5 text-sm text-primary"
           >{{
             document.current_version.status === 'completed'
-              ? 'Buka PDF final'
-              : 'Buka snapshot / preview'
+              ? t('Buka PDF final')
+              : t('Buka snapshot / preview')
           }}</RouterLink
         >
       </div>
@@ -195,7 +195,7 @@ onUnmounted(() => {
         "
         class="mt-5 text-sm text-muted"
       >
-        Pratinjau terbaru belum tersedia. Buka draft untuk membuat pratinjau dari editor.
+        {{ t('Pratinjau terbaru belum tersedia. Buka draft untuk membuat pratinjau dari editor.') }}
       </p>
       <RouterLink
         v-if="
@@ -207,15 +207,15 @@ onUnmounted(() => {
         "
         to="/invitations/claim"
         class="mt-4 inline-flex min-h-11 items-center text-sm text-primary underline"
-        >Buka tautan undangan asli Anda untuk mengklaim giliran sendiri.</RouterLink
+        >{{ t('Buka tautan undangan asli Anda untuk mengklaim giliran sendiri.') }}</RouterLink
       >
     </section>
     <section class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
       <h2 class="mb-5 text-xl font-semibold">
-        {{ owner ? 'Penerima dan progres' : 'Giliran Anda' }}
+        {{ owner ? t('Penerima dan progres') : t('Giliran Anda') }}
       </h2>
       <p v-if="!document.current_version.assignments?.length" class="text-sm text-muted">
-        Belum ada penerima.
+        {{ t('Belum ada penerima.') }}
       </p>
       <div
         v-for="a in document.current_version.assignments"
@@ -224,10 +224,10 @@ onUnmounted(() => {
       >
         <div class="min-w-0">
           <p class="text-sm font-semibold wrap-anywhere">
-            {{ a.sequence_number }}. {{ a.recipient_email }}
+            {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }}
           </p>
           <p v-if="a.signature" class="mt-2 text-xs text-muted">
-            Ditandatangani {{ dateLabel(a.signature.signed_at) }}
+            {{ t('Ditandatangani :date', { date: dateLabel(a.signature.signed_at) }) }}
           </p>
         </div>
         <StatusBadge :status="a.status" /><button
@@ -240,58 +240,58 @@ onUnmounted(() => {
           :disabled="busy || remaining(a.guid) > 0"
           @click="resend(a)"
         >
-          {{ remaining(a.guid) ? `Tunggu ${remaining(a.guid)} detik` : 'Kirim ulang undangan' }}
+          {{ remaining(a.guid) ? t('Tunggu :seconds detik', { seconds: formatNumber(remaining(a.guid)) }) : t('Kirim ulang undangan') }}
         </button>
       </div>
     </section>
     <section class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-      <h2 class="mb-4 text-xl font-semibold">Audit aktivitas</h2>
-      <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">Memuat aktivitas…</p>
-      <FeedbackMessage :message="activityErrors.audit || ''" error />
-      <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">Belum ada aktivitas.</p>
+      <h2 class="mb-4 text-xl font-semibold">{{ t('Audit aktivitas') }}</h2>
+      <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">{{ t('Memuat aktivitas…') }}</p>
+      <FeedbackMessage :message="t(activityErrors.audit || '')" error />
+      <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">{{ t('Belum ada aktivitas.') }}</p>
       <div v-for="event in audit?.data" :key="event.guid" class="border-t border-line py-3">
-        <p class="text-sm font-medium">{{ event.action }} · Versi {{ event.version_guid || '—' }}</p>
-        <p v-if="event.metadata?.reason" class="mt-1 text-sm">Alasan: {{ event.metadata.reason }}</p>
+        <p class="text-sm font-medium">{{ t(event.action) }} · {{ t('Versi') }} {{ event.version_guid || '—' }}</p>
+        <p v-if="event.metadata?.reason" class="mt-1 text-sm">{{ t('Alasan') }}: {{ event.metadata.reason }}</p>
         <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
       </div>
       <div v-if="audit && audit.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">Sebelumnya</button>
-        <span>Halaman {{ audit.meta.current_page }} dari {{ audit.meta.last_page }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page >= audit.meta.last_page" @click="loadActivity('audit', audit.meta.current_page + 1)">Berikutnya</button>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
+        <span>{{ t('Halaman :current dari :last', { current: formatNumber(audit.meta.current_page), last: formatNumber(audit.meta.last_page) }) }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page >= audit.meta.last_page" @click="loadActivity('audit', audit.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
       </div>
     </section>
     <section class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-      <h2 class="mb-4 text-xl font-semibold">Riwayat versi</h2>
-      <p v-if="activityBusy.versions" role="status" class="text-sm text-muted">Memuat versi…</p>
-      <FeedbackMessage :message="activityErrors.versions || ''" error />
-      <p v-if="versions && !versions.data.length && !activityBusy.versions" class="text-sm text-muted">Belum ada riwayat versi.</p>
+      <h2 class="mb-4 text-xl font-semibold">{{ t('Riwayat versi') }}</h2>
+      <p v-if="activityBusy.versions" role="status" class="text-sm text-muted">{{ t('Memuat versi…') }}</p>
+      <FeedbackMessage :message="t(activityErrors.versions || '')" error />
+      <p v-if="versions && !versions.data.length && !activityBusy.versions" class="text-sm text-muted">{{ t('Belum ada riwayat versi.') }}</p>
       <div v-for="version in versions?.data" :key="version.guid" class="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3">
         <div>
-          <p class="text-sm font-medium">Versi {{ version.version_number }} · {{ version.status }}</p>
+          <p class="text-sm font-medium">{{ t('Versi :number · :status', { number: formatNumber(version.version_number), status: statusLabel(version.status) }) }}</p>
           <p class="text-xs text-muted">{{ dateLabel(version.updated_at) }}</p>
         </div>
-        <RouterLink :to="`/documents/${document.guid}/versions/${version.guid}/view`" class="min-h-11 inline-flex items-center text-sm text-primary underline">Buka versi</RouterLink>
+        <RouterLink :to="`/documents/${document.guid}/versions/${version.guid}/view`" class="min-h-11 inline-flex items-center text-sm text-primary underline">{{ t('Buka versi') }}</RouterLink>
       </div>
       <div v-if="versions && versions.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page <= 1" @click="loadActivity('versions', versions.meta.current_page - 1)">Sebelumnya</button>
-        <span>Halaman {{ versions.meta.current_page }} dari {{ versions.meta.last_page }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page >= versions.meta.last_page" @click="loadActivity('versions', versions.meta.current_page + 1)">Berikutnya</button>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page <= 1" @click="loadActivity('versions', versions.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
+        <span>{{ t('Halaman :current dari :last', { current: formatNumber(versions.meta.current_page), last: formatNumber(versions.meta.last_page) }) }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page >= versions.meta.last_page" @click="loadActivity('versions', versions.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
       </div>
     </section>
     <section v-if="owner" class="mt-6 rounded-xl border border-line bg-white p-5 sm:p-8">
-      <h2 class="mb-4 text-xl font-semibold">Status email</h2>
-      <p class="mb-3 text-xs text-muted">Status sent berarti transport menerima email, bukan bukti email masuk ke inbox.</p>
-      <p v-if="activityBusy.emails" role="status" class="text-sm text-muted">Memuat status email…</p>
-      <FeedbackMessage :message="activityErrors.emails || ''" error />
-      <p v-if="emails && !emails.data.length && !activityBusy.emails" class="text-sm text-muted">Belum ada catatan email.</p>
+      <h2 class="mb-4 text-xl font-semibold">{{ t('Status email') }}</h2>
+      <p class="mb-3 text-xs text-muted">{{ t('Status sent berarti transport menerima email, bukan bukti email masuk ke inbox.') }}</p>
+      <p v-if="activityBusy.emails" role="status" class="text-sm text-muted">{{ t('Memuat status email…') }}</p>
+      <FeedbackMessage :message="t(activityErrors.emails || '')" error />
+      <p v-if="emails && !emails.data.length && !activityBusy.emails" class="text-sm text-muted">{{ t('Belum ada catatan email.') }}</p>
       <div v-for="email in emails?.data" :key="email.guid" class="border-t border-line py-3">
-        <p class="text-sm font-medium">{{ email.notification_type }} · {{ emailStatusLabel(email.status) }}</p>
-        <p class="mt-1 text-xs text-muted">{{ email.recipient_email }} · {{ dateLabel(email.sent_at || email.created_at) }} · Percobaan {{ email.attempt_count }}</p>
+        <p class="text-sm font-medium">{{ t(email.notification_type) }} · {{ emailStatusLabel(email.status) }}</p>
+        <p class="mt-1 text-xs text-muted">{{ email.recipient_email }} · {{ dateLabel(email.sent_at || email.created_at) }} · {{ t('Percobaan :count', { count: formatNumber(email.attempt_count) }) }}</p>
       </div>
       <div v-if="emails && emails.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page <= 1" @click="loadActivity('emails', emails.meta.current_page - 1)">Sebelumnya</button>
-        <span>Halaman {{ emails.meta.current_page }} dari {{ emails.meta.last_page }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page >= emails.meta.last_page" @click="loadActivity('emails', emails.meta.current_page + 1)">Berikutnya</button>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page <= 1" @click="loadActivity('emails', emails.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
+        <span>{{ t('Halaman :current dari :last', { current: formatNumber(emails.meta.current_page), last: formatNumber(emails.meta.last_page) }) }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page >= emails.meta.last_page" @click="loadActivity('emails', emails.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
       </div>
     </section></template
   >

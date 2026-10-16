@@ -9,6 +9,7 @@ import PdfViewer from './PdfViewer.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { confirmAction, notify } from '../../services/feedback'
+import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{
   versionGuid: string
   hash: string
@@ -45,7 +46,7 @@ const overlays = computed(() =>
     (rows.value[a.guid] ?? []).map((p) => ({
       ...p,
       assignment: a.guid,
-      label: `${a.sequence_number}. ${a.recipient_email}`,
+      label: `${formatNumber(a.sequence_number)}. ${a.recipient_email}`,
     })),
   ),
 )
@@ -163,8 +164,7 @@ async function removeArea(index: number) {
   <div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
     <div class="min-w-0">
       <p class="mb-3 text-sm text-muted">
-        Pilih penerima lalu klik halaman untuk menambah area. Geser area atau gunakan input
-        posisi/ukuran.
+        {{ t('Pilih penerima lalu klik halaman untuk menambah area. Geser area atau gunakan input posisi/ukuran.') }}
       </p>
       <PdfViewer
         :version-guid="versionGuid"
@@ -182,15 +182,15 @@ async function removeArea(index: number) {
       />
     </div>
     <section class="min-w-0 rounded-xl border border-line bg-white p-4">
-      <h2 class="mb-4 font-semibold">Posisi tanda tangan</h2>
-      <FeedbackMessage :message="error" error /><label class="grid gap-2 text-xs"
-        >Penerima<select
+      <h2 class="mb-4 font-semibold">{{ t('Posisi tanda tangan') }}</h2>
+      <FeedbackMessage :message="t(error)" error /><label class="grid gap-2 text-xs"
+        >{{ t('Penerima') }}<select
           v-model="selected"
           class="min-h-11 w-full rounded border border-line px-2"
           :disabled="busy"
         >
           <option v-for="a in assignments" :key="a.guid" :value="a.guid">
-            {{ a.sequence_number }}. {{ a.recipient_email }}
+            {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }}
           </option>
         </select></label
       ><button
@@ -198,7 +198,7 @@ async function removeArea(index: number) {
         :disabled="busy || !pdfValid"
         @click="add(1)"
       >
-        + Area pada halaman 1
+        + {{ t('Area pada halaman :number', { number: 1 }) }}
       </button>
       <fieldset
         v-for="(area, index) in rows[selected]"
@@ -206,9 +206,9 @@ async function removeArea(index: number) {
         class="mb-4 grid grid-cols-2 gap-2 rounded border border-line p-3"
         :disabled="busy"
       >
-        <legend class="px-1 text-xs">Area {{ index + 1 }}</legend>
+        <legend class="px-1 text-xs">{{ t('Area :number', { number: formatNumber(index + 1) }) }}</legend>
         <label class="col-span-2 grid gap-1 text-xs"
-          >Halaman<input
+          >{{ t('Halaman') }}<input
             v-model.number="area.page_number"
             type="number"
             min="1"
@@ -219,7 +219,7 @@ async function removeArea(index: number) {
           v-for="field in ['x', 'y', 'width', 'height'] as const"
           :key="field"
           class="grid gap-1 text-xs"
-          >{{ { x: 'X', y: 'Y', width: 'Lebar', height: 'Tinggi' }[field] }} (0–1)<input
+          >{{ t(({ x: 'X', y: 'Y', width: 'Lebar', height: 'Tinggi' }[field])) }} (0–1)<input
             v-model.number="area[field]"
             type="number"
             min="0"
@@ -231,24 +231,24 @@ async function removeArea(index: number) {
           class="col-span-2 min-h-11 text-left text-xs text-error"
           @click="removeArea(index)"
         >
-          Hapus area
+          {{ t('Hapus area') }}
         </button>
       </fieldset>
       <div v-for="a in assignments" :key="a.guid" class="my-3 text-xs wrap-anywhere">
         <p>
-          {{ a.sequence_number }}. {{ a.recipient_email }} · {{ rows[a.guid]?.length ?? 0 }} area
+          {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }} · {{ t('Area :count', { count: formatNumber(rows[a.guid]?.length ?? 0) }) }}
         </p>
         <p class="mt-1 text-muted" role="status">
           {{
-            statuses[a.guid] ||
+            t(statuses[a.guid] ||
             (a.placeholders?.some((p) => p.needs_review)
               ? 'Perlu ditinjau dan disimpan ulang'
-              : 'Belum diubah')
+              : 'Belum diubah'))
           }}
         </p>
       </div>
       <BaseButton class="mt-3 w-full" :loading="busy" :disabled="!pdfValid || busy" @click="save"
-        >Simpan semua posisi</BaseButton
+        >{{ t('Simpan semua posisi') }}</BaseButton
       ><label class="mt-4 flex items-start gap-2 text-xs leading-relaxed"
         ><input
           v-model="reviewed"
@@ -258,7 +258,7 @@ async function removeArea(index: number) {
             busy || !pdfValid || changed.size > 0 || !assignments.every((a) => rows[a.guid]?.length)
           "
           @change="review"
-        />Saya sudah meninjau seluruh posisi pada snapshot ini.</label
+        />{{ t('Saya sudah meninjau seluruh posisi pada snapshot ini.') }}</label
       >
     </section>
   </div>

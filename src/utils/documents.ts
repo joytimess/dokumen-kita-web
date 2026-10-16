@@ -1,4 +1,5 @@
 import type { Assignment, DocumentRecord, DocumentVersion, Placeholder } from '../types/documents'
+import { language, t } from '../services/workspace-language'
 const labels: Record<string, string> = {
   draft: 'Draft',
   in_progress: 'Dalam proses tanda tangan',
@@ -16,9 +17,14 @@ const labels: Record<string, string> = {
   superseded: 'Digantikan',
   rejected: 'Ditolak',
 }
-export const statusLabel = (status: string) => labels[status] ?? 'Status belum dikenali'
+export const statusLabel = (status: string) => labels[status] ? t(labels[status]!) : status
 export const dateLabel = (value?: string | null) =>
-  value ? new Date(value).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+  value
+    ? new Date(value).toLocaleString(language.value === 'en' ? 'en-US' : 'id-ID', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : '—'
 export function ownAssignment(document: DocumentRecord, user: { guid: string; email: string }) {
   const assignments = document.current_version.assignments ?? []
   // Non-owner resources contain only assignments bound to the current account.

@@ -1,248 +1,331 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import axios from 'axios'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { useAuthStore } from '../../stores/auth'
-import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
-import { confirmAction, notify } from '../../services/feedback'
+import { dateLabel, statusLabel } from '../../utils/documents'
 import type { DocumentRecord, Page } from '../../types/documents'
-import { dateLabel } from '../../utils/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
-import BaseButton from '../../components/ui/BaseButton.vue'
+import CreateDocumentButton from '../../components/documents/CreateDocumentButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
-import FormField from '../../components/ui/FormField.vue'
-const route = useRoute(),
-  router = useRouter(),
-  auth = useAuthStore()
+import { formatNumber, language, t } from '../../services/workspace-language'
+
+const route = useRoute()
+const auth = useAuthStore()
 const summary = computed(() => route.path === '/dashboard')
 const page = ref<Page<DocumentRecord>>()
 const status = ref('')
+const perPage = ref(10)
 const query = ref('')
-const draftDialog = ref<HTMLDialogElement>()
-const title = ref('')
-const attempted = ref(false)
-const { busy, error, run } = useWorkspaceRequest()
-const { busy: creating, error: createError, fields: createFields, run: createRun } = useWorkspaceRequest()
-const visible = computed(() =>
-  (page.value?.data ?? []).filter((d) => d.title.toLowerCase().includes(query.value.toLowerCase())),
-)
-async function load(number = 1) {
-  const result = await run(() => documentsApi.list(number, status.value))
-  if (result) page.value = result
-}
-watch(status, () => {
-  void load()
+const sort = ref<'created' | 'title'>('created')
+const listLoading = ref(false)
+const listError = ref('')
+const actionError = ref('')
+const openActions = ref('')
+const counts = ref<Record<string, number | undefined>>({})
+const countsLoading = ref(false)
+const countError = ref(false)
+const downloading = ref('')
+let listRequest = 0
+let countRequest = 0
+let active = true
+const statuses = ['draft', 'in_progress', 'completed', 'finalizing']
+const visible = computed(() => {
+  const rows = (page.value?.data ?? []).filter((document) =>
+    document.title.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase()),
+  )
+  return sort.value === 'title'
+    ? rows.sort((a, b) => a.title.localeCompare(b.title, language.value === 'en' ? 'en' : 'id'))
+    : rows
 })
-async function createDraft() {
-  if (!title.value.trim() || attempted.value || creating.value) return
-  if (!(await confirmAction(`Buat draft “${title.value.trim()}”?`, {
-    title: 'Buat dokumen', action: 'Buat draft',
-  }))) return
-  const document = await createRun(async () => {
-    attempted.value = true
-    try {
-      return await documentsApi.create(title.value.trim())
-    } catch (cause) {
-      if (!workspaceError(cause).ambiguous) attempted.value = false
-      throw cause
-    }
-  })
-  if (document) {
-    notify.success('Draft berhasil dibuat.')
-    await router.push(`/documents/${document.guid}/edit`)
+const showingStart = computed(() => {
+  const meta = page.value?.meta
+  return meta?.total ? (meta.current_page - 1) * meta.per_page + 1 : 0
+})
+const showingEnd = computed(() => {
+  const meta = page.value?.meta
+  return meta ? Math.min(meta.current_page * meta.per_page, meta.total) : 0
+})
+const numberLabel = formatNumber
+const tabs = computed(() => [
+  { id: '', label: t('Semua'), total: counts.value.all },
+  { id: 'draft', label: t('Draft'), total: counts.value.draft },
+  { id: 'in_progress', label: t('Dalam proses'), total: counts.value.in_progress },
+  { id: 'completed', label: t('Selesai'), total: counts.value.completed },
+])
+const stats = computed(() => [
+  { status: 'draft', label: t('Draft'), detail: t('Dokumen draft milik Anda.'), icon: 'edit_document' },
+  { status: 'in_progress', label: t('Dalam proses'), detail: t('Dokumen yang sedang dalam proses tanda tangan.'), icon: 'draw' },
+  { status: 'completed', label: t('Selesai'), detail: t('Dokumen yang selesai diproses.'), icon: 'task_alt' },
+  { status: 'finalizing', label: t('Finalisasi'), detail: t('Dokumen sedang menyiapkan hasil final.'), icon: 'hourglass_top' },
+])
+
+async function loadList(number = 1) {
+  const request = ++listRequest
+  const identity = auth.user?.guid
+  listLoading.value = true
+  listError.value = ''
+  actionError.value = ''
+  openActions.value = ''
+  page.value = undefined
+  try {
+    const result = await documentsApi.list(number, status.value, summary.value ? perPage.value : 15)
+    if (!active || request !== listRequest || auth.user?.guid !== identity) return
+    page.value = result
+  } catch (cause) {
+    if (!active || request !== listRequest || auth.user?.guid !== identity) return
+    listError.value = t(workspaceError(cause).message)
+    if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
+  } finally {
+    if (active && request === listRequest) listLoading.value = false
   }
 }
-onMounted(() => load())
+
+async function loadCounts() {
+  if (countsLoading.value) return
+  const request = ++countRequest
+  const identity = auth.user?.guid
+  countsLoading.value = true
+  countError.value = false
+  counts.value = {}
+  await Promise.all(['', ...statuses].map(async (value) => {
+    try {
+      const result = await documentsApi.count(value)
+      if (!active || request !== countRequest || auth.user?.guid !== identity) return
+      counts.value[value || 'all'] = result.meta.total
+    } catch (cause) {
+      if (!active || request !== countRequest || auth.user?.guid !== identity) return
+      countError.value = true
+      if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
+    }
+  }))
+  if (active && request === countRequest) countsLoading.value = false
+}
+
+function filterChanged() {
+  query.value = ''
+  sort.value = 'created'
+  void loadList(1)
+}
+
+function chooseStatus(value: string) {
+  if (status.value === value) return
+  status.value = value
+}
+
+function toggleActions(guid: string) {
+  openActions.value = openActions.value === guid ? '' : guid
+}
+
+function pageTo(number: number) {
+  query.value = ''
+  sort.value = 'created'
+  void loadList(number)
+}
+
+async function download(document: DocumentRecord) {
+  if (downloading.value) return
+  const identity = auth.user?.guid
+  downloading.value = document.guid
+  actionError.value = ''
+  try {
+    const { data } = await documentsApi.pdf(document.current_version.guid)
+    if (!active || auth.user?.guid !== identity) return
+    const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `${document.guid}.pdf`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (cause) {
+    if (!active || auth.user?.guid !== identity) return
+    actionError.value = t(workspaceError(cause).message)
+    if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
+  } finally {
+    downloading.value = ''
+  }
+}
+
+watch(status, () => filterChanged())
+watch(() => route.path, (path) => {
+  if (path === '/dashboard') void loadCounts()
+  query.value = ''
+  sort.value = 'created'
+  if (status.value) {
+    status.value = ''
+    return
+  }
+  void loadList()
+})
+onMounted(() => {
+  void loadList()
+  if (summary.value) void loadCounts()
+})
+onUnmounted(() => {
+  active = false
+  listRequest++
+  countRequest++
+})
 </script>
+
 <template>
-  <div class="mb-8 flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <p class="mb-2 text-xs font-semibold tracking-widest text-primary">RUANG DOKUMEN ANDA</p>
-      <h1 class="text-3xl font-semibold">
-        {{ summary ? `Selamat datang, ${auth.user?.name}.` : 'Dokumen Saya' }}
-      </h1>
-      <p class="mt-3 text-sm text-muted">
-        {{
-          summary
-            ? 'Lanjutkan dokumen terbaru Anda atau mulai satu draft baru.'
-            : 'Kelola dokumen milik Anda dan ikuti statusnya.'
-        }}
-      </p>
+  <div v-if="summary" class="mb-8 flex flex-wrap items-end justify-between gap-5">
+    <div class="min-w-0">
+      <p class="mb-2 text-xs font-semibold tracking-[0.16em] text-primary">{{ t('Ruang dokumen Anda') }}</p>
+      <h1 class="text-3xl font-semibold sm:text-[32px]">{{ t('Selamat datang, :name.', { name: auth.user?.name ?? '' }) }}</h1>
+      <p class="mt-3 max-w-2xl text-sm text-muted">{{ t('Lanjutkan dokumen terbaru Anda atau mulai satu draft baru.') }}</p>
     </div>
-    <BaseButton @click="draftDialog?.showModal()">+ Buat Dokumen</BaseButton>
+    <CreateDocumentButton />
   </div>
-  <dialog
-    ref="draftDialog"
-    aria-labelledby="draft-title"
-    aria-describedby="draft-description"
-    class="draft-dialog fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-line bg-white p-0 text-ink shadow-2xl"
-    @cancel="creating && $event.preventDefault()"
-  >
-    <form @submit.prevent="createDraft">
-      <div class="border-b border-line px-6 pt-6 pb-5 sm:px-8 sm:pt-8">
-        <p class="text-xs font-semibold tracking-widest text-primary">DRAFT BARU</p>
-        <h2 id="draft-title" class="mt-2 text-2xl font-semibold">Buat dokumen baru</h2>
-        <p id="draft-description" class="mt-2 text-sm leading-6 text-muted">
-          Mulai dengan judul. Isi dan penerima disiapkan setelah draft dibuat.
-        </p>
-      </div>
-      <div class="px-6 pt-6 pb-2 sm:px-8">
-        <FeedbackMessage :message="createError" error />
-        <FormField
-          id="document-title"
-          v-model="title"
-          label="Judul dokumen"
-          :maxlength="255"
-          :error="createFields.title"
-          :disabled="creating || attempted"
-        />
-        <p v-if="attempted && createError" class="pb-4 text-sm text-muted">
-          Hasil permintaan belum pasti. Periksa daftar dokumen sebelum memuat ulang halaman untuk mencoba lagi.
-        </p>
-      </div>
-      <div class="flex flex-wrap justify-end gap-3 border-t border-line bg-soft px-6 py-4 sm:px-8">
+  <div v-else class="mb-7 flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <p class="mb-2 text-xs font-semibold tracking-[0.16em] text-primary">{{ t('Ruang dokumen Anda') }}</p>
+      <h1 class="text-3xl font-semibold">{{ t('Dokumen Saya') }}</h1>
+      <p class="mt-3 text-sm text-muted">{{ t('Kelola dokumen milik Anda dan ikuti statusnya.') }}</p>
+    </div>
+    <CreateDocumentButton />
+  </div>
+
+  <section v-if="summary" :aria-label="t('Ringkasan dokumen')" class="mb-8">
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <button
+        v-for="stat in stats"
+        :key="stat.status"
+        type="button"
+        class="min-h-36 rounded-2xl border border-line bg-white p-5 text-left shadow-[0_2px_10px_rgba(20,28,48,0.035)] transition-colors hover:border-primary/50 hover:bg-[#fcfdfc]"
+        :class="status === stat.status && 'border-primary ring-1 ring-primary/20'"
+        :aria-pressed="status === stat.status"
+        @click="chooseStatus(stat.status)"
+      >
+        <span class="flex items-center justify-between text-sm font-semibold text-muted">
+          {{ stat.label }}
+          <span class="material-symbols-outlined text-[20px] text-primary" aria-hidden="true">{{ stat.icon }}</span>
+        </span>
+        <strong v-if="counts[stat.status] !== undefined" class="mt-3 block text-3xl font-semibold text-ink">{{ numberLabel(counts[stat.status]!) }}</strong>
+        <span v-else-if="countsLoading" class="mt-4 block h-7 w-20 animate-pulse rounded bg-sage motion-reduce:animate-none" :aria-label="t('Memuat statistik')"></span>
+        <span v-else class="mt-3 block text-sm font-medium text-error">{{ t('Belum tersedia') }}</span>
+        <span class="mt-1 block text-xs leading-5 text-muted">{{ stat.detail }}</span>
+      </button>
+    </div>
+    <div v-if="countError" class="mt-3 flex items-center justify-between gap-4 text-sm text-muted">
+      <span>{{ t('Sebagian statistik belum dapat dimuat.') }}</span>
+      <button type="button" class="min-h-11 font-semibold text-primary underline" :disabled="countsLoading" @click="loadCounts">{{ t('Muat ulang statistik') }}</button>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-line bg-white p-4 shadow-[0_2px_10px_rgba(20,28,48,0.035)] sm:p-6">
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
+      <h2 class="text-xl font-semibold">{{ summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
+      <div v-if="summary" role="group" :aria-label="t('Filter dokumen')" class="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-soft p-1">
         <button
+          v-for="tab in tabs"
+          :key="tab.id || 'all'"
           type="button"
-          class="min-h-12 rounded-lg border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors duration-150 ease-out hover:bg-sage disabled:opacity-50 motion-reduce:transition-none"
-          :disabled="creating"
-          @click="draftDialog?.close()"
-        >Batal</button>
-        <button
-          type="submit"
-          class="min-h-12 rounded-lg border border-primary bg-primary px-6 py-3 text-sm font-semibold text-white enabled:hover:bg-[#174c39] disabled:cursor-not-allowed! disabled:opacity-65"
-          :disabled="!title.trim() || attempted || creating"
-        >Buat draft</button>
+          class="min-h-10 shrink-0 rounded-lg px-3 text-xs font-semibold sm:text-sm"
+          :class="status === tab.id ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-ink'"
+          :aria-pressed="status === tab.id"
+          @click="chooseStatus(tab.id)"
+        >{{ tab.label }}<span v-if="tab.total !== undefined" class="ml-1.5 text-muted">{{ numberLabel(tab.total) }}</span><span v-else-if="countsLoading" class="ml-1.5">…</span></button>
       </div>
-    </form>
-  </dialog>
-  <FeedbackMessage :message="error" error /><button
-    v-if="error"
-    class="mb-4 min-h-11 text-primary underline"
-    @click="load()"
-  >
-    Coba lagi
-  </button>
-  <div v-if="!summary" class="mb-5 flex flex-wrap gap-4">
-    <label class="grid min-w-0 flex-1 gap-2 text-xs"
-      >Cari pada halaman yang dimuat<input
-        v-model="query"
-        type="search"
-        class="min-h-11 rounded-lg border border-line bg-white px-3"
-        placeholder="Cari judul di halaman ini" /></label
-    ><label class="grid gap-2 text-xs"
-      >Status<select v-model="status" class="min-h-11 rounded-lg border border-line bg-white px-3">
-        <option value="">Semua status</option>
-        <option value="draft">Draft</option>
-        <option value="in_progress">Dalam proses</option>
-        <option value="finalizing">Menyiapkan final</option>
-        <option value="completed">Selesai</option>
-      </select></label
-    >
-  </div>
-  <p v-if="busy" role="status" class="py-10 text-sm text-muted">Memuat dokumen…</p>
-  <div
-    v-else-if="page && !page.data.length"
-    class="rounded-xl border border-dashed border-line bg-white px-6 py-16 text-center"
-  >
-    <h2 class="text-xl font-semibold">
-      {{ status ? 'Belum ada dokumen dengan status ini.' : 'Mulai dari satu dokumen.' }}
-    </h2>
-    <p class="mt-3 text-sm text-muted">Draft yang Anda buat akan tampil di sini.</p>
-  </div>
-  <div v-else class="grid gap-3">
-    <RouterLink
-      v-for="document in visible"
-      :key="document.guid"
-      :to="`/documents/${document.guid}`"
-      class="flex min-w-0 flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-white p-5 transition-colors hover:border-primary motion-reduce:transition-none"
-      ><div class="min-w-0">
-        <h2 class="font-semibold wrap-anywhere">{{ document.title }}</h2>
-        <p class="mt-2 text-xs text-muted">
-          Versi {{ document.current_version.version_number }} · Diperbarui
-          {{ dateLabel(document.updated_at) }}
-        </p>
+    </div>
+
+    <div class="mb-5 grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-end">
+      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
+        {{ t('Cari di halaman ini') }}
+        <input v-model="query" type="search" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink" :placeholder="t('Cari judul di halaman ini')" />
+      </label>
+      <label v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
+        {{ t('Status') }}
+        <select v-model="status" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink">
+          <option value="">{{ t('Semua status') }}</option>
+          <option value="draft">{{ t('Draft') }}</option>
+          <option value="in_progress">{{ t('Dalam proses') }}</option>
+          <option value="finalizing">{{ t('Finalisasi') }}</option>
+          <option value="completed">{{ t('Selesai') }}</option>
+        </select>
+      </label>
+      <label class="grid gap-2 text-xs font-medium text-muted">
+        {{ t('Urutkan') }}
+        <select v-model="sort" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink">
+          <option value="created">{{ t('Terbaru dibuat') }}</option>
+          <option value="title">{{ t('Judul A–Z di halaman ini') }}</option>
+        </select>
+      </label>
+    </div>
+    <p class="mb-4 text-xs text-muted">{{ t('Pencarian dan urutan judul berlaku pada halaman ini.') }}</p>
+
+    <FeedbackMessage :message="listError || actionError" error />
+    <button v-if="listError" type="button" class="mb-4 min-h-11 text-sm font-semibold text-primary underline" @click="loadList()">{{ t('Coba lagi') }}</button>
+    <p v-if="listLoading" role="status" class="py-10 text-center text-sm text-muted">{{ t('Memuat dokumen…') }}</p>
+    <div v-else-if="page && !page.meta.total" class="rounded-xl border border-dashed border-line bg-soft/60 px-6 py-12 text-center">
+      <h3 class="text-lg font-semibold">{{ status ? t('Belum ada dokumen dengan status ini.') : t('Belum ada dokumen.') }}</h3>
+      <p class="mt-2 text-sm text-muted">{{ t('Draft yang Anda buat akan tampil di sini.') }}</p>
+    </div>
+    <div v-else-if="page && !visible.length" class="rounded-xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted">
+      {{ t('Tidak ada judul yang cocok pada halaman ini.') }}
+    </div>
+    <div v-else-if="page" class="divide-y divide-line">
+      <article v-for="document in visible" :key="document.guid" class="flex min-w-0 flex-wrap items-center justify-between gap-4 py-4 first:pt-1 last:pb-1">
+        <div class="flex min-w-0 flex-1 items-start gap-3">
+          <span class="mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl bg-sage text-primary"><span class="material-symbols-outlined" aria-hidden="true">description</span></span>
+          <div class="min-w-0">
+            <RouterLink :to="`/documents/${document.guid}`" class="block truncate font-semibold text-ink hover:text-primary hover:underline" :title="document.title">{{ document.title }}</RouterLink>
+            <p class="mt-1.5 text-xs text-muted">{{ t('Versi :number · Diperbarui :date', { number: numberLabel(document.current_version.version_number), date: dateLabel(document.current_version.updated_at) }) }}</p>
+          </div>
+        </div>
+        <div class="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
+          <StatusBadge :status="document.current_version.status" />
+          <div v-if="summary" class="relative">
+            <button type="button" :aria-label="t('Buka tindakan dokumen :title', { title: document.title })" :aria-expanded="openActions === document.guid" :aria-controls="`document-actions-${document.guid}`" class="grid size-10 place-items-center rounded-lg text-muted hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="toggleActions(document.guid)">
+              <span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
+            </button>
+            <div v-show="openActions === document.guid" :id="`document-actions-${document.guid}`" class="absolute right-0 top-full z-20 mt-1 min-w-44 rounded-xl border border-line bg-white p-1 shadow-xl">
+              <RouterLink v-if="document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Edit') }}</RouterLink>
+              <button v-if="document.current_version.status === 'completed'" type="button" class="block min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-soft disabled:opacity-50" :disabled="!!downloading" @click="toggleActions(document.guid); download(document)">
+                {{ t('Unduh PDF') }}
+              </button>
+              <RouterLink :to="`/documents/${document.guid}`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
+            </div>
+          </div>
+          <RouterLink v-if="!summary && document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-semibold text-primary hover:bg-sage">{{ t('Edit') }}</RouterLink>
+          <button v-if="!summary && document.current_version.status === 'completed'" type="button" class="inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-sm font-semibold text-primary hover:bg-sage disabled:opacity-50" :disabled="!!downloading" @click="download(document)">
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span>{{ downloading === document.guid ? t('Mengunduh…') : t('Unduh PDF') }}
+          </button>
+          <RouterLink v-if="!summary" :to="`/documents/${document.guid}`" class="inline-flex min-h-10 items-center rounded-lg px-3 text-sm text-muted hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
+        </div>
+      </article>
+    </div>
+
+    <nav v-if="summary && page" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
+      <label class="flex items-center gap-2 text-xs font-medium text-muted">
+        {{ t('Tampilkan baris') }}
+        <select v-model.number="perPage" class="h-9 rounded-md border border-line bg-white px-2 text-sm text-ink" @change="pageTo(1)">
+          <option :value="10">10</option>
+          <option :value="25">25</option>
+          <option :value="50">50</option>
+        </select>
+      </label>
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <span class="mr-1 text-xs text-muted">{{ t('Menampilkan :start–:end dari :total', { start: numberLabel(showingStart), end: numberLabel(showingEnd), total: numberLabel(page.meta.total) }) }}</span>
+        <button type="button" class="grid size-9 place-items-center rounded-md border border-line bg-white text-ink hover:bg-soft disabled:text-muted disabled:opacity-50" :aria-label="t('Sebelumnya')" :disabled="listLoading || !page.links.prev" @click="pageTo(page.meta.current_page - 1)">
+          <span class="material-symbols-outlined text-[20px]" aria-hidden="true">chevron_left</span>
+        </button>
+        <button type="button" class="grid size-9 place-items-center rounded-md border border-line bg-white text-ink hover:bg-soft disabled:text-muted disabled:opacity-50" :aria-label="t('Berikutnya')" :disabled="listLoading || !page.links.next" @click="pageTo(page.meta.current_page + 1)">
+          <span class="material-symbols-outlined text-[20px]" aria-hidden="true">chevron_right</span>
+        </button>
       </div>
-      <StatusBadge :status="document.current_version.status"
-    /></RouterLink>
-    <p v-if="page?.data.length && !visible.length" class="p-6 text-sm text-muted">
-      Tidak ada judul yang cocok pada halaman ini.
-    </p>
-  </div>
-  <nav
-    v-if="page && page.meta.last_page > 1"
-    class="mt-6 flex flex-wrap items-center gap-4 text-sm"
-    aria-label="Halaman dokumen"
-  >
-    <button
-      class="min-h-11 text-primary disabled:opacity-40"
-      :disabled="busy || !page.links.prev"
-      @click="load(page.meta.current_page - 1)"
-    >
-      ← Sebelumnya</button
-    ><span>Halaman {{ page.meta.current_page }} dari {{ page.meta.last_page }}</span
-    ><button
-      class="min-h-11 text-primary disabled:opacity-40"
-      :disabled="busy || !page.links.next"
-      @click="load(page.meta.current_page + 1)"
-    >
-      Berikutnya →
-    </button>
-  </nav>
-  <p v-if="summary" class="mt-6 text-xs text-muted">
-    Menampilkan halaman terbaru dari dokumen milik Anda.
-    <RouterLink to="/documents" class="text-primary underline">Buka Dokumen Saya</RouterLink>
+    </nav>
+    <nav v-else-if="page && page.meta.last_page > 1" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
+      <button type="button" class="min-h-11 rounded-lg px-3 text-primary hover:bg-sage disabled:opacity-40" :disabled="listLoading || !page.links.prev" @click="pageTo(page.meta.current_page - 1)">← {{ t('Sebelumnya') }}</button>
+      <span class="text-muted">{{ t('Halaman :current dari :last', { current: page.meta.current_page, last: page.meta.last_page }) }}</span>
+      <button type="button" class="min-h-11 rounded-lg px-3 text-primary hover:bg-sage disabled:opacity-40" :disabled="listLoading || !page.links.next" @click="pageTo(page.meta.current_page + 1)">{{ t('Berikutnya') }} →</button>
+    </nav>
+  </section>
+
+  <p v-if="summary" class="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+    <span>{{ t('Dokumen milik akun aktif') }}</span>
+    <RouterLink to="/documents" class="font-semibold text-primary underline">{{ t('Buka Dokumen Saya') }} →</RouterLink>
   </p>
 </template>
-
-<style scoped>
-.draft-dialog {
-  opacity: 0;
-  transform: translateY(10px) scale(0.985);
-  transition:
-    opacity 180ms ease-in,
-    transform 180ms ease-in,
-    display 180ms allow-discrete,
-    overlay 180ms allow-discrete;
-}
-
-.draft-dialog[open] {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transition-timing-function: ease-out;
-}
-
-@starting-style {
-  .draft-dialog[open] {
-    opacity: 0;
-    transform: translateY(10px) scale(0.985);
-  }
-}
-
-.draft-dialog::backdrop {
-  background-color: rgb(8 29 21 / 0%);
-  transition:
-    background-color 180ms ease-in,
-    display 180ms allow-discrete,
-    overlay 180ms allow-discrete;
-}
-
-.draft-dialog[open]::backdrop {
-  background-color: rgb(8 29 21 / 40%);
-  transition-timing-function: ease-out;
-}
-
-@starting-style {
-  .draft-dialog[open]::backdrop {
-    background-color: rgb(8 29 21 / 0%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .draft-dialog,
-  .draft-dialog::backdrop {
-    transition: none;
-  }
-  .draft-dialog { transform: none; }
-}
-</style>

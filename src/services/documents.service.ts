@@ -24,8 +24,10 @@ async function write<T>(path: string, payload: unknown, method: 'post' | 'put' |
   return (await mutation<{ data: T }>(`/api/v1${path}`, payload, method)).data
 }
 export const documentsApi = {
-  list: (page = 1, status = '') =>
-    get<Page<DocumentRecord>>('/documents', { page, per_page: 15, ...(status ? { status } : {}) }),
+  list: (page = 1, status = '', perPage = 15) =>
+    get<Page<DocumentRecord>>('/documents', { page, per_page: perPage, ...(status ? { status } : {}) }),
+  count: (status = '') =>
+    get<Page<DocumentRecord>>('/documents', { page: 1, per_page: 1, ...(status ? { status } : {}) }),
   detail: (guid: string) =>
     get<{ data: DocumentRecord }>(`/documents/${encodeURIComponent(guid)}`).then((r) => r.data),
   version: (guid: string) =>

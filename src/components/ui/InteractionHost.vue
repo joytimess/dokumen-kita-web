@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { confirmation, finishConfirmation, notice, notify } from '../../services/feedback'
+import { t } from '../../services/workspace-language'
 
 const dialog = ref<HTMLDialogElement>()
 let accepted = false
@@ -37,11 +38,11 @@ function onClose() {
       "
       :role="notice.kind === 'error' ? 'alert' : 'status'"
     >
-      <span class="min-w-0 flex-1 wrap-anywhere">{{ notice.message }}</span>
+      <span class="min-w-0 flex-1 wrap-anywhere">{{ t(notice.message) }}</span>
       <button
         type="button"
         class="text-muted"
-        aria-label="Tutup notifikasi"
+        :aria-label="t('Tutup notifikasi')"
         @click="notify.dismiss()"
       >×</button>
     </div>
@@ -54,22 +55,22 @@ function onClose() {
     class="confirmation-dialog fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-line bg-white p-6 text-ink shadow-2xl"
     @close="onClose"
   >
-    <h2 id="confirmation-title" class="text-xl font-semibold">{{ confirmation?.title }}</h2>
+    <h2 id="confirmation-title" class="text-xl font-semibold">{{ t(confirmation?.title ?? '') }}</h2>
     <p id="confirmation-message" class="mt-3 text-sm leading-6 text-muted">
-      {{ confirmation?.message }}
+      {{ t(confirmation?.message ?? '') }}
     </p>
     <div class="mt-6 flex flex-wrap justify-end gap-3">
       <button
         type="button"
         class="min-h-11 rounded-lg border border-line px-5 text-sm font-semibold"
         @click="close(false)"
-      >Batal</button>
+      >{{ t('Batal') }}</button>
       <button
         type="button"
         class="min-h-11 rounded-lg px-5 text-sm font-semibold text-white"
         :class="confirmation?.danger ? 'bg-error' : 'bg-primary'"
         @click="close(true)"
-      >{{ confirmation?.action }}</button>
+      >{{ t(confirmation?.action ?? '') }}</button>
     </div>
   </dialog>
 </template>

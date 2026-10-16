@@ -15,6 +15,7 @@ import { createReadGate } from '../../utils/readGate'
 import { findTextMatches, type TextMatch } from '../../utils/pdfSearch'
 import type { Placeholder } from '../../types/documents'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import { formatNumber, t } from '../../services/workspace-language'
 GlobalWorkerOptions.workerSrc = workerUrl
 const props = defineProps<{
   versionGuid: string
@@ -339,7 +340,7 @@ onUnmounted(() => {
 <template>
   <section
     class="min-w-0 rounded-xl border border-line bg-white p-3 sm:p-4"
-    aria-label="Pembaca PDF"
+    :aria-label="t('Pembaca PDF')"
   >
     <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
       <button
@@ -348,7 +349,7 @@ onUnmounted(() => {
         @click="navigate(page - 1)"
       >
         ←</button
-      ><span>Halaman {{ page }} / {{ count || '…' }}</span
+      ><span>{{ t('Halaman :current / :count', { current: formatNumber(page), count: count ? formatNumber(count) : '…' }) }}</span
       ><button
         class="min-h-11 rounded border border-line px-3 disabled:opacity-40"
         :disabled="page >= count || rendering"
@@ -357,7 +358,7 @@ onUnmounted(() => {
         →
       </button>
       <form class="flex items-center gap-2" @submit.prevent="navigate(Number(jump))">
-        <label class="sr-only" for="pdf-page">Ke halaman</label
+        <label class="sr-only" for="pdf-page">{{ t('Ke halaman') }}</label
         ><input
           id="pdf-page"
           v-model.number="jump"
@@ -365,15 +366,15 @@ onUnmounted(() => {
           type="number"
           min="1"
           :max="count"
-        /><button class="min-h-11 px-2 text-primary">Buka</button>
+        /><button class="min-h-11 px-2 text-primary">{{ t('Buka') }}</button>
       </form>
       <label class="flex items-center gap-2"
-        >Zoom<select
+        >{{ t('Zoom') }}<select
           :value="fit ? 'fit' : zoom"
           class="min-h-11 rounded border border-line px-2"
           @change="changeZoom"
         >
-          <option value="fit">Sesuai lebar</option>
+          <option value="fit">{{ t('Sesuai lebar') }}</option>
           <option v-for="scale in [0.5, 0.75, 1, 1.25, 1.5, 2]" :key="scale" :value="scale">
             {{ scale * 100 }}%
           </option>
@@ -381,20 +382,20 @@ onUnmounted(() => {
       >
     </div>
     <form class="mb-3 flex flex-wrap items-center gap-2 text-xs" @submit.prevent="search">
-      <label class="sr-only" for="pdf-search">Cari teks PDF</label
+      <label class="sr-only" for="pdf-search">{{ t('Cari teks PDF') }}</label
       ><input
         id="pdf-search"
         v-model="query"
         type="search"
         class="min-h-11 min-w-0 flex-1 rounded border border-line px-3"
-        placeholder="Cari teks dalam PDF"
+        :placeholder="t('Cari teks dalam PDF')"
         @input="clearSearch"
-      /><button class="min-h-11 px-3 text-primary">Cari</button
+      /><button class="min-h-11 px-3 text-primary">{{ t('Cari') }}</button
       ><button
         type="button"
         class="min-h-11 px-2 disabled:opacity-40"
         :disabled="!hits.length"
-        aria-label="Hasil sebelumnya"
+        :aria-label="t('Hasil sebelumnya')"
         @click="nextHit(-1)"
       >
         ↑</button
@@ -402,28 +403,28 @@ onUnmounted(() => {
         type="button"
         class="min-h-11 px-2 disabled:opacity-40"
         :disabled="!hits.length"
-        aria-label="Hasil berikutnya"
+        :aria-label="t('Hasil berikutnya')"
         @click="nextHit(1)"
       >
         ↓</button
       ><span role="status">{{
         searching
-          ? `Mencari ${scanned}/${count} halaman · ${hits.length} hasil sementara`
-          : `${hits.length} hasil${activeHit >= 0 ? ` · ${activeHit + 1}` : ''}`
+          ? t('Mencari :scanned/:count halaman · :hits hasil sementara', { scanned: formatNumber(scanned), count: formatNumber(count), hits: formatNumber(hits.length) })
+          : t(':hits hasil:active', { hits: formatNumber(hits.length), active: activeHit >= 0 ? ` · ${formatNumber(activeHit + 1)}` : '' })
       }}</span>
     </form>
-    <FeedbackMessage :message="error" error /><button
+    <FeedbackMessage :message="t(error)" error /><button
       v-if="error"
       class="mb-3 min-h-11 text-sm text-primary underline"
       @click="pdf ? render() : load()"
     >
-      Coba muat lagi
+      {{ t('Coba muat lagi') }}
     </button>
     <p v-if="busy || rendering" class="mb-3 text-xs text-muted" role="status">
-      {{ busy ? 'Memuat PDF…' : 'Merender halaman…' }}
+      {{ busy ? t('Memuat PDF…') : t('Merender halaman…') }}
     </p>
     <p v-if="noText" class="mb-3 text-xs text-muted">
-      Halaman ini tidak memiliki lapisan teks yang dapat dicari. OCR belum tersedia.
+      {{ t('Halaman ini tidak memiliki lapisan teks yang dapat dicari. OCR belum tersedia.') }}
     </p>
     <div
       ref="scroller"
@@ -465,9 +466,9 @@ onUnmounted(() => {
           <img
             v-if="area.image"
             :src="area.image"
-            alt="Preview tanda tangan Anda"
+            :alt="t('Tanda tangan pilihan Anda')"
             class="h-full w-full object-contain"
-          /><span v-else>{{ area.label || 'Tanda tangan' }}</span>
+          /><span v-else>{{ area.label || t('Tanda tangan') }}</span>
         </div>
         <div ref="bottom" class="absolute inset-x-0 bottom-0 h-px"></div>
       </div>

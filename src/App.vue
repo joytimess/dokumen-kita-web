@@ -7,6 +7,7 @@ import BaseButton from './components/ui/BaseButton.vue'
 import InteractionHost from './components/ui/InteractionHost.vue'
 import { afterAuthentication } from './utils/authRedirect'
 import { pendingInvitation } from './utils/invitation'
+import { t } from './services/workspace-language'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -29,7 +30,7 @@ onMounted(() => {
 </script>
 <template>
   <a class="fixed -top-24 left-4 z-100 bg-white p-3 text-primary focus:top-3" href="#main"
-    >Lewati ke konten</a
+    >{{ t('Lewati ke konten') }}</a
   >
   <main v-if="sessionBlocked" id="main" class="mx-auto max-w-lg p-6 pt-24">
     <h1 class="mb-5 text-2xl text-ink">Sesi belum dapat diperiksa</h1>
@@ -40,7 +41,7 @@ onMounted(() => {
     >
   </main>
   <RouterView v-else v-slot="{ Component }">
-    <div v-if="Component" :key="route.path" class="flow-root min-h-dvh bg-white">
+    <div v-if="Component" class="flow-root min-h-dvh bg-white">
       <component :is="Component" />
     </div>
   </RouterView>

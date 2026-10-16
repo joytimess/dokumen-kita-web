@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { confirmAction, notify } from '../../services/feedback'
+import { t } from '../../services/workspace-language'
 const emit = defineEmits<{ created: [file: File] }>()
 const canvas = ref<HTMLCanvasElement>()
 const ink = ref(false),
@@ -36,7 +37,7 @@ function move(event: PointerEvent) {
 }
 async function clear() {
   if (ink.value && !(await confirmAction('Hapus coretan tanda tangan ini?', {
-    title: 'Hapus coretan', action: 'Hapus', danger: true,
+    title: t('Hapus coretan'), action: t('Hapus'), danger: true,
   }))) return
   canvas.value?.getContext('2d')?.clearRect(0, 0, 800, 300)
   ink.value = false
@@ -66,30 +67,30 @@ onMounted(() => {
 <template>
   <div>
     <p class="mb-3 text-xs text-muted">
-      Gambar dengan mouse atau sentuhan. Gunakan unggah gambar sebagai alternatif.
+      {{ t('Gambar dengan mouse atau sentuhan. Gunakan unggah gambar sebagai alternatif.') }}
     </p>
     <canvas
       ref="canvas"
       width="800"
       height="300"
       class="w-full touch-none rounded-lg border border-dashed border-primary bg-white"
-      aria-label="Area menggambar tanda tangan"
+      :aria-label="t('Area menggambar tanda tangan')"
       @pointerdown.prevent="start"
       @pointermove.prevent="move"
       @pointerup="drawing = false"
       @pointercancel="drawing = false"
     ></canvas>
-    <p v-if="error" role="alert" class="mt-2 text-xs text-error">{{ error }}</p>
+    <p v-if="error" role="alert" class="mt-2 text-xs text-error">{{ t(error) }}</p>
     <div class="mt-3 flex flex-wrap gap-4">
       <button type="button" class="min-h-11 text-sm text-primary underline" @click="clear">
-        Hapus coretan</button
+        {{ t('Hapus coretan') }}</button
       ><button
         type="button"
         class="min-h-11 rounded border border-line px-4 text-sm text-primary disabled:opacity-40"
         :disabled="!ink"
         @click="use"
       >
-        Gunakan coretan
+        {{ t('Gunakan coretan') }}
       </button>
     </div>
   </div>

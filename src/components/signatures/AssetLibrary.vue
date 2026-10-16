@@ -8,6 +8,7 @@ import AssetImage from './AssetImage.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { confirmAction, notify } from '../../services/feedback'
+import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{ selectable?: boolean; selected?: string; disabled?: boolean }>()
 const emit = defineEmits<{ select: [asset: SignatureAsset] }>()
 const page = ref<Page<SignatureAsset>>(),
@@ -66,7 +67,7 @@ function uploadInput(event: Event) {
 async function upload() {
   if (!file.value || props.disabled) return
   if (!(await confirmAction('Simpan gambar ini sebagai aset tanda tangan?', {
-    title: 'Simpan tanda tangan', action: 'Simpan',
+    title: t('Simpan tanda tangan'), action: t('Simpan'),
   }))) return
   const result = await run(() => documentsApi.uploadAsset(file.value!, source.value))
   if (result) {
@@ -89,7 +90,7 @@ onUnmounted(() => {
 </script>
 <template>
   <section class="min-w-0">
-    <div class="mb-5 flex flex-wrap gap-2" role="group" aria-label="Sumber tanda tangan">
+    <div class="mb-5 flex flex-wrap gap-2" role="group" :aria-label="t('Sumber tanda tangan')">
       <button
         v-for="item in [
           { id: 'saved', label: 'Aset tersimpan' },
@@ -103,19 +104,19 @@ onUnmounted(() => {
         :aria-pressed="mode === item.id"
         @click="mode = item.id"
       >
-        {{ item.label }}
+        {{ t(item.label) }}
       </button>
     </div>
-    <FeedbackMessage :message="error" error /><FeedbackMessage :message="message" />
+    <FeedbackMessage :message="t(error)" error /><FeedbackMessage :message="t(message)" />
     <p v-for="(text, key) in fields" :key="key" class="mb-2 text-xs text-error">{{ text }}</p>
     <fieldset :disabled="busy || disabled">
       <div v-if="mode === 'saved'">
-        <p v-if="busy" role="status" class="text-sm text-muted">Memuat aset…</p>
+        <p v-if="busy" role="status" class="text-sm text-muted">{{ t('Memuat aset…') }}</p>
         <button v-if="error" class="min-h-11 text-sm text-primary underline" @click="load()">
-          Coba lagi
+          {{ t('Coba lagi') }}
         </button>
         <p v-if="page && !page.data.length" class="py-8 text-sm text-muted">
-          Belum ada tanda tangan tersimpan. Buat coretan atau unggah gambar pertama Anda.
+          {{ t('Belum ada tanda tangan tersimpan. Buat coretan atau unggah gambar pertama Anda.') }}
         </p>
         <div class="grid gap-3 sm:grid-cols-2">
           <component
@@ -128,33 +129,33 @@ onUnmounted(() => {
             :aria-pressed="selectable ? selected === asset.guid : undefined"
             @click="selectable && emit('select', asset)"
             ><AssetImage :guid="asset.guid" /><span class="mt-3 block text-xs text-muted"
-              >{{ asset.source_type === 'drawn' ? 'Coretan' : 'Unggahan' }} · {{ asset.width }}×{{
-                asset.height
+              >{{ t(asset.source_type === 'drawn' ? 'Coretan' : 'Unggahan') }} · {{ formatNumber(asset.width) }}×{{
+                formatNumber(asset.height)
               }}
               px</span
             ><span v-if="selectable" class="mt-2 block text-xs font-semibold text-primary">{{
-              selected === asset.guid ? 'Tanda tangan dipilih' : 'Pilih tanda tangan ini'
+              t(selected === asset.guid ? 'Tanda tangan dipilih' : 'Pilih tanda tangan ini')
             }}</span></component
           >
         </div>
         <nav
           v-if="page && page.meta.last_page > 1"
           class="mt-4 flex flex-wrap items-center gap-4 text-xs"
-          aria-label="Halaman aset"
+          :aria-label="t('Halaman aset')"
         >
           <button
             class="min-h-11 text-primary disabled:opacity-40"
             :disabled="!page.links.prev"
             @click="load(page.meta.current_page - 1)"
           >
-            ← Sebelumnya</button
-          ><span>{{ page.meta.current_page }} / {{ page.meta.last_page }}</span
+            ← {{ t('Sebelumnya') }}</button
+          ><span>{{ formatNumber(page.meta.current_page) }} / {{ formatNumber(page.meta.last_page) }}</span
           ><button
             class="min-h-11 text-primary disabled:opacity-40"
             :disabled="!page.links.next"
             @click="load(page.meta.current_page + 1)"
           >
-            Berikutnya →
+            {{ t('Berikutnya') }} →
           </button>
         </nav>
       </div>
@@ -164,23 +165,23 @@ onUnmounted(() => {
         class="rounded-xl border border-dashed border-line bg-white p-5"
       >
         <label class="grid gap-3 text-sm"
-          >Pilih gambar tanda tangan<input
+          >{{ t('Pilih gambar tanda tangan') }}<input
             type="file"
             accept="image/png,image/jpeg,image/webp"
             class="min-h-11 w-full min-w-0 text-xs"
             @change="uploadInput"
         /></label>
         <p class="mt-3 text-xs text-muted">
-          PNG/JPEG/WebP · Maks. 2.048 KB · 16×16 sampai 2.048×1.024 px
+          {{ t('PNG/JPEG/WebP · Maks. 2.048 KB · 16×16 sampai 2.048×1.024 px') }}
         </p>
       </div>
       <div v-if="file" class="mt-5 rounded-xl border border-line bg-white p-4">
-        <p class="mb-3 text-xs font-semibold">Preview aset baru</p>
-        <img :src="preview" alt="Preview aset baru" class="h-28 w-full object-contain" /><BaseButton
+        <p class="mb-3 text-xs font-semibold">{{ t('Preview aset baru') }}</p>
+        <img :src="preview" :alt="t('Preview aset baru')" class="h-28 w-full object-contain" /><BaseButton
           class="mt-4"
           :loading="busy"
           @click="upload"
-          >Simpan aset</BaseButton
+          >{{ t('Simpan aset') }}</BaseButton
         >
       </div>
     </fieldset>
