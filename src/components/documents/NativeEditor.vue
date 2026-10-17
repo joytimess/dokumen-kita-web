@@ -7,9 +7,11 @@ import Image from '@tiptap/extension-image'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
+import { CellSelection, TableMap } from '@tiptap/pm/tables'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorData } from '../../types/documents'
 import { editorPayload } from '../../utils/editor'
+import { splitTableRanges } from '../../utils/table'
 import { documentFontFamilies, editorDataToHtml, isDocumentFontFamily, tiptapToEditorData, type TiptapNode } from '../../utils/tiptap'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { t } from '../../services/workspace-language'
@@ -22,6 +24,11 @@ const fileInput = ref<HTMLInputElement>()
 const error = ref('')
 const toolbarVersion = ref(0)
 const formatMenu = ref<HTMLDetailsElement | null>(null)
+const splitDialog = ref<HTMLDialogElement | null>(null)
+const splitRows = ref('2')
+const splitColumns = ref('2')
+const splitError = ref('')
+const rowMinimumHeight = ref('')
 let disposed = false
 let locked = false
 
@@ -90,6 +97,155 @@ function tableLinesHidden() {
 function toggleTableLines() {
   const table = selectedTable()
   if (table) editor.value?.chain().focus().updateAttributes('table', { showBorders: table.node.attrs.showBorders === false }).run()
+}
+const tableColors = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple'] as const
+function cellAttribute(name: string) {
+  void toolbarVersion.value
+  return editor.value?.getAttributes('tableCell')[name]
+    ?? editor.value?.getAttributes('tableHeader')[name]
+    ?? ''
+}
+function setCellAttribute(name: string, value: unknown) {
+  if (!editor.value || locked) return
+  editor.value.chain().focus().setCellAttribute(name, value).run()
+}
+function setCellAttributeFromEvent(name: string, event: Event) {
+  setCellAttribute(name, (event.target as HTMLSelectElement).value || null)
+}
+function cellBorderHidden() {
+  const value = cellAttribute('border')
+  return typeof value === 'boolean' ? !value : selectedTable()?.node.attrs.showBorders === false
+}
+function setCellBorder() {
+  const current = editor.value?.getAttributes('tableCell').border
+    ?? editor.value?.getAttributes('tableHeader').border
+  const visible = current ?? selectedTable()?.node.attrs.showBorders !== false
+  setCellAttribute('border', !visible)
+}
+function cellContext(allowRange = false) {
+  const current = editor.value
+  const selection = current?.state.selection
+  const table = selectedTable()
+  if (!current || !selection || !table) return
+  if (selection instanceof CellSelection && selection.$anchorCell.pos !== selection.$headCell.pos && !allowRange) return
+  let cellPosition: number | undefined
+  if (selection instanceof CellSelection) cellPosition = selection.$anchorCell.pos
+  else {
+    for (let depth = selection.$from.depth; depth > 0; depth--) {
+      if (['tableCell', 'tableHeader'].includes(selection.$from.node(depth).type.name)) {
+        cellPosition = selection.$from.before(depth)
+        break
+      }
+    }
+  }
+  if (cellPosition === undefined) return
+  const map = TableMap.get(table.node)
+  try {
+    const rect = selection instanceof CellSelection && selection.$anchorCell.pos !== selection.$headCell.pos
+      ? map.rectBetween(selection.$anchorCell.pos - table.position - 1, selection.$headCell.pos - table.position - 1)
+      : map.findCell(cellPosition - table.position - 1)
+    return { table, cellPosition, map, rect }
+  } catch { return }
+}
+function canSplitCell() {
+  const context = cellContext()
+  return !!context && (context.rect.right - context.rect.left > 1 || context.rect.bottom - context.rect.top > 1
+    || context.map.width < 20 || context.map.height < 50)
+}
+function openSplitDialog() {
+  const context = cellContext()
+  if (!context) return
+  const availableRows = Math.max(1, Math.min(50 - context.map.height + context.rect.bottom - context.rect.top, 50))
+  const availableColumns = Math.max(1, Math.min(20 - context.map.width + context.rect.right - context.rect.left, 20))
+  splitRows.value = String(Math.max(context.rect.bottom - context.rect.top, Math.min(2, availableRows)))
+  splitColumns.value = String(Math.max(context.rect.right - context.rect.left, Math.min(2, availableColumns)))
+  splitError.value = ''
+  splitDialog.value?.showModal()
+}
+function splitTableRect(tr: Editor['state']['tr'], tablePosition: number, top: number, left: number, rows: number, columns: number) {
+  const table = tr.doc.nodeAt(tablePosition)
+  if (!table) return false
+  const map = TableMap.get(table)
+  if (top < 0 || left < 0 || top + rows > map.height || left + columns > map.width) return false
+  const anchor = tablePosition + 1 + map.map[top * map.width + left]
+  const head = tablePosition + 1 + map.map[(top + rows - 1) * map.width + left + columns - 1]
+  tr.setSelection(CellSelection.create(tr.doc, anchor, head))
+  return true
+}
+function splitCell() {
+  const current = editor.value
+  const context = cellContext()
+  if (!current || !context) return
+  const rows = Number(splitRows.value), columns = Number(splitColumns.value)
+  const sourceRows = context.rect.bottom - context.rect.top
+  const sourceColumns = context.rect.right - context.rect.left
+  const regionRows = Math.max(rows, sourceRows)
+  const regionColumns = Math.max(columns, sourceColumns)
+  if (!Number.isInteger(rows) || rows < 1 || !Number.isInteger(columns) || columns < 1
+    || context.map.height + regionRows - (context.rect.bottom - context.rect.top) > 50
+    || context.map.width + regionColumns - (context.rect.right - context.rect.left) > 20
+    || (rows === 1 && columns === 1)) {
+    splitError.value = 'Jumlah baris dan kolom tabel tidak valid atau melewati batas.'
+    return
+  }
+
+  const chain = current.chain().focus()
+  for (let index = context.rect.bottom - context.rect.top; index < regionRows; index++) chain.addRowAfter()
+  for (let index = context.rect.right - context.rect.left; index < regionColumns; index++) chain.addColumnAfter()
+  const tablePosition = context.table.position
+  const cellPosition = context.cellPosition
+  chain.command(({ tr }) => {
+    const mappedTable = tr.mapping.map(tablePosition)
+    const mappedCell = tr.mapping.map(cellPosition)
+    const table = tr.doc.nodeAt(mappedTable)
+    if (!table) return false
+    const rect = TableMap.get(table).findCell(mappedCell - mappedTable - 1)
+    return splitTableRect(tr, mappedTable, rect.top, rect.left, regionRows, regionColumns)
+  })
+  if (regionRows > sourceRows || regionColumns > sourceColumns) chain.mergeCells()
+  chain.splitCell()
+  const rowRanges = splitTableRanges(regionRows, rows)
+  const columnRanges = splitTableRanges(regionColumns, columns)
+  for (const [top, bottom] of rowRanges) {
+    for (const [left, right] of columnRanges) {
+      if ((bottom - top) * (right - left) < 2) continue
+      chain.command(({ tr }) => splitTableRect(tr, tr.mapping.map(tablePosition), top, left, bottom - top, right - left))
+      chain.mergeCells()
+    }
+  }
+  if (!chain.run()) {
+    splitError.value = 'Sel tabel belum dapat dibagi dengan ukuran tersebut.'
+    return
+  }
+  splitDialog.value?.close()
+}
+function setRowHeight(clear = false) {
+  const current = editor.value
+  const context = cellContext(true)
+  if (!current || !context) return
+  const height = clear ? null : Number(rowMinimumHeight.value)
+  if (height !== null && (!Number.isInteger(height) || height < 1 || height > 1200)) {
+    error.value = t('Tinggi minimum baris harus antara 1 dan 1200 px.')
+    return
+  }
+  const transaction = current.state.tr
+  const start = context.table.position + 1
+  for (let row = context.rect.top; row < context.rect.bottom; row++) {
+    let position = start
+    for (let index = 0; index < row; index++) position += context.table.node.child(index).nodeSize
+    transaction.setNodeMarkup(position, undefined, { ...context.table.node.child(row).attrs, minHeightPx: height })
+  }
+  current.view.dispatch(transaction)
+  current.commands.focus()
+}
+function syncRowHeight() {
+  const context = cellContext(true)
+  const heights = context
+    ? Array.from({ length: context.rect.bottom - context.rect.top }, (_, index) => context.table.node.child(context.rect.top + index).attrs.minHeightPx ?? null)
+    : []
+  rowMinimumHeight.value = heights.length && heights.every((height) => height === heights[0]) && heights[0] !== null
+    ? String(heights[0])
+    : ''
 }
 async function removeTablePart(part: 'column' | 'row' | 'table') {
   const label = { column: 'kolom', row: 'baris', table: 'tabel' }[part]
@@ -173,6 +329,56 @@ const TableBorders = Extension.create({
           default: true,
           parseHTML: (element: HTMLElement) => element.getAttribute('data-show-borders') !== 'false',
           renderHTML: (attributes: { showBorders?: boolean }) => attributes.showBorders === false ? { 'data-show-borders': 'false' } : {},
+        },
+      },
+    }]
+  },
+})
+
+const TableCellStyles = Extension.create({
+  name: 'tableCellStyles',
+  addGlobalAttributes() {
+    return [{
+      types: ['tableCell', 'tableHeader'],
+      attributes: {
+        verticalAlign: {
+          default: 'top',
+          parseHTML: (element: HTMLElement) => ['top', 'middle', 'bottom'].includes(element.dataset.verticalAlign ?? '') ? element.dataset.verticalAlign : 'top',
+          renderHTML: (attributes: { verticalAlign?: string }) => attributes.verticalAlign && attributes.verticalAlign !== 'top' ? { 'data-vertical-align': attributes.verticalAlign } : {},
+        },
+        backgroundColor: {
+          default: null,
+          parseHTML: (element: HTMLElement) => tableColors.includes(element.dataset.cellColor as typeof tableColors[number]) ? element.dataset.cellColor : null,
+          renderHTML: (attributes: { backgroundColor?: string | null }) => attributes.backgroundColor && tableColors.includes(attributes.backgroundColor as typeof tableColors[number]) ? { 'data-cell-color': attributes.backgroundColor } : {},
+        },
+        border: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.dataset.cellBorder === 'true' ? true : element.dataset.cellBorder === 'false' ? false : null,
+          renderHTML: (attributes: { border?: boolean | null }) => typeof attributes.border === 'boolean' ? { 'data-cell-border': String(attributes.border) } : {},
+        },
+      },
+    }]
+  },
+})
+
+const TableRowHeight = Extension.create({
+  name: 'tableRowHeight',
+  addGlobalAttributes() {
+    return [{
+      types: ['tableRow'],
+      attributes: {
+        minHeightPx: {
+          default: null,
+          parseHTML: (element: HTMLElement) => {
+            const value = Number(element.dataset.rowMinHeightPx)
+            return Number.isInteger(value) && value >= 1 && value <= 1200 ? value : null
+          },
+          renderHTML: (attributes: { minHeightPx?: number | null }) => {
+            const value = attributes.minHeightPx
+            return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 1200
+              ? { 'data-row-min-height-px': String(value), style: `height:${value}px` }
+              : {}
+          },
         },
       },
     }]
@@ -390,8 +596,10 @@ onMounted(() => {
       editable: !props.readonly,
       extensions: [
         StarterKit.configure({ blockquote: false, codeBlock: false, horizontalRule: false, strike: false }),
-        TableKit.configure({ table: { allowTableNodeSelection: true } }),
+        TableKit.configure({ table: { allowTableNodeSelection: true, resizable: true, cellMinWidth: 64 } }),
         TableBorders,
+        TableCellStyles,
+        TableRowHeight,
         DocumentFontFamily,
         PaperPages,
         DocumentImage,
@@ -400,10 +608,11 @@ onMounted(() => {
       ],
       onUpdate() {
         toolbarVersion.value++
+        syncRowHeight()
         emit('pending')
         void capture()
       },
-      onSelectionUpdate() { toolbarVersion.value++ },
+      onSelectionUpdate() { toolbarVersion.value++; syncRowHeight() },
       editorProps: {
         handleKeyDown(_view, event) {
           if (event.key === 'Tab' && !event.shiftKey && listDepth() >= 3) {
@@ -493,6 +702,15 @@ onUnmounted(() => {
         <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke atas')" :title="t('Pindahkan tabel ke atas')" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke bawah')" :title="t('Pindahkan tabel ke bawah')" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
         <button type="button" class="editor-tool" :aria-label="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :title="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Gabungkan sel')" :title="t('Gabungkan sel')" :disabled="!editor.can().mergeCells()" @click="editor.chain().focus().mergeCells().run()"><span class="material-symbols-outlined" aria-hidden="true">merge</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Bagi sel')" :title="t('Bagi sel')" :disabled="!canSplitCell()" @click="openSplitDialog"><span class="material-symbols-outlined" aria-hidden="true">splitscreen</span></button>
+        <label class="table-select"><span class="sr-only">{{ t('Warna sel') }}</span><select :aria-label="t('Warna sel')" :value="cellAttribute('backgroundColor') || ''" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('backgroundColor', $event)"><option value="">{{ t('Tanpa warna') }}</option><option value="gray">{{ t('Abu-abu') }}</option><option value="blue">{{ t('Biru') }}</option><option value="green">{{ t('Hijau') }}</option><option value="yellow">{{ t('Kuning') }}</option><option value="orange">{{ t('Jingga') }}</option><option value="red">{{ t('Merah') }}</option><option value="purple">{{ t('Ungu') }}</option></select></label>
+        <label class="table-select"><span class="sr-only">{{ t('Perataan sel') }}</span><select :aria-label="t('Perataan sel')" :value="cellAttribute('align') || ''" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('align', $event)"><option value="">{{ t('Rata kiri') }}</option><option value="center">{{ t('Rata tengah') }}</option><option value="right">{{ t('Rata kanan') }}</option><option value="justify">{{ t('Rata kiri-kanan') }}</option></select></label>
+        <label class="table-select"><span class="sr-only">{{ t('Perataan vertikal sel') }}</span><select :aria-label="t('Perataan vertikal sel')" :value="cellAttribute('verticalAlign') || 'top'" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('verticalAlign', $event)"><option value="top">{{ t('Atas') }}</option><option value="middle">{{ t('Tengah') }}</option><option value="bottom">{{ t('Bawah') }}</option></select></label>
+        <button type="button" class="editor-tool" :aria-label="t(cellBorderHidden() ? 'Tampilkan garis sel' : 'Sembunyikan garis sel')" :title="t(cellBorderHidden() ? 'Tampilkan garis sel' : 'Sembunyikan garis sel')" :aria-pressed="!cellBorderHidden()" :disabled="!selectedTable()" @click="setCellBorder"><span class="material-symbols-outlined" aria-hidden="true">border_outer</span></button>
+        <label class="table-height-control"><span>{{ t('Tinggi minimum baris (px)') }}</span><input v-model="rowMinimumHeight" type="number" min="1" max="1200" inputmode="numeric" :disabled="!selectedTable()"></label>
+        <button type="button" class="editor-tool" :aria-label="t('Terapkan tinggi minimum')" :title="t('Terapkan tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight()"><span class="material-symbols-outlined" aria-hidden="true">height</span></button>
+        <button type="button" class="editor-tool" :aria-label="t('Hapus tinggi minimum')" :title="t('Hapus tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight(true)"><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
       </div>
       <div class="flex rounded border border-line" role="group" :aria-label="t('Gambar')">
         <button type="button" class="editor-tool" :aria-label="t('Tambah gambar')" :title="t('Tambah gambar')" @click="fileInput?.click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span></button>
@@ -500,6 +718,15 @@ onUnmounted(() => {
       </div>
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="addImage">
     </div>
+    <dialog ref="splitDialog" class="table-split-dialog rounded-xl border border-line p-0 shadow-xl" @close="splitError = ''">
+      <form class="grid gap-4 p-5" @submit.prevent="splitCell">
+        <h2 class="text-lg font-semibold">{{ t('Bagi sel tabel') }}</h2>
+        <label class="grid gap-1 text-sm">{{ t('Jumlah baris') }}<input v-model="splitRows" type="number" min="1" max="50" required inputmode="numeric" class="min-h-11 rounded border border-line px-3"></label>
+        <label class="grid gap-1 text-sm">{{ t('Jumlah kolom') }}<input v-model="splitColumns" type="number" min="1" max="20" required inputmode="numeric" class="min-h-11 rounded border border-line px-3"></label>
+        <p v-if="splitError" role="alert" class="text-sm text-danger">{{ t(splitError) }}</p>
+        <div class="flex justify-end gap-2"><button type="button" class="min-h-10 rounded border border-line px-4" @click="splitDialog?.close()">{{ t('Batal') }}</button><button type="submit" class="min-h-10 rounded bg-primary px-4 text-white">{{ t('Bagi sel') }}</button></div>
+      </form>
+    </dialog>
     <div class="relative">
       <EditorContent :editor="editor" :style="paperStyle" class="editor-paper-surface min-w-0 overflow-x-auto rounded-xl bg-[#e8e8ec] py-6" />
     </div>
@@ -593,4 +820,20 @@ onUnmounted(() => {
 :deep(.tiptap .validation-cell) { outline: 2px solid var(--color-error); outline-offset: -2px; }
 :deep(.tiptap table[data-show-borders="false"] th),
 :deep(.tiptap table[data-show-borders="false"] td) { border-color: transparent; }
+:deep(.tiptap td[data-cell-color="gray"]), :deep(.tiptap th[data-cell-color="gray"]) { background-color: #f1f5f9; }
+:deep(.tiptap td[data-cell-color="blue"]), :deep(.tiptap th[data-cell-color="blue"]) { background-color: #dbeafe; }
+:deep(.tiptap td[data-cell-color="green"]), :deep(.tiptap th[data-cell-color="green"]) { background-color: #dcfce7; }
+:deep(.tiptap td[data-cell-color="yellow"]), :deep(.tiptap th[data-cell-color="yellow"]) { background-color: #fef3c7; }
+:deep(.tiptap td[data-cell-color="orange"]), :deep(.tiptap th[data-cell-color="orange"]) { background-color: #ffedd5; }
+:deep(.tiptap td[data-cell-color="red"]), :deep(.tiptap th[data-cell-color="red"]) { background-color: #fee2e2; }
+:deep(.tiptap td[data-cell-color="purple"]), :deep(.tiptap th[data-cell-color="purple"]) { background-color: #f3e8ff; }
+:deep(.tiptap td[data-vertical-align="middle"]), :deep(.tiptap th[data-vertical-align="middle"]) { vertical-align: middle; }
+:deep(.tiptap td[data-vertical-align="bottom"]), :deep(.tiptap th[data-vertical-align="bottom"]) { vertical-align: bottom; }
+:deep(.tiptap td[data-cell-border="false"]), :deep(.tiptap th[data-cell-border="false"]) { border-color: transparent; }
+:deep(.tiptap td[data-cell-border="true"]), :deep(.tiptap th[data-cell-border="true"]) { border: 1px solid #777; }
+.table-select select { min-height: 2.25rem; max-width: 9rem; border: 1px solid var(--color-line); border-radius: .375rem; background: white; padding-inline: .5rem; font-size: .75rem; }
+.table-height-control { display: inline-flex; align-items: center; gap: .375rem; font-size: .75rem; }
+.table-height-control input { width: 5rem; min-height: 2.25rem; border: 1px solid var(--color-line); border-radius: .375rem; padding-inline: .5rem; }
+.table-split-dialog { width: min(24rem, calc(100vw - 2rem)); }
+.table-split-dialog::backdrop { background: rgb(15 23 42 / 35%); }
 </style>

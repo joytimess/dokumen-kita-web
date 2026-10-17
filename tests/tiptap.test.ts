@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { getSchema } from '@tiptap/core'
+import StarterKit from '@tiptap/starter-kit'
+import { TableKit } from '@tiptap/extension-table'
+import { EditorState } from '@tiptap/pm/state'
+import { CellSelection, TableMap, addColumnAfter, addRowAfter, mergeCells, splitCell } from '@tiptap/pm/tables'
 import { editorDataToHtml, tiptapToEditorData } from '../src/utils/tiptap'
+import { splitTableRanges } from '../src/utils/table'
 
 describe('konversi editor Tiptap dan blok backend', () => {
   it('membuka blok hasil impor sebagai konten Tiptap, termasuk tabel, daftar, dan gambar', () => {
@@ -56,7 +62,8 @@ describe('konversi editor Tiptap dan blok backend', () => {
   it('menolak konten yang akan hilang atau berubah saat disimpan', () => {
     expect(() => tiptapToEditorData({ type: 'doc', content: [{ type: 'blockquote' }] })).toThrow()
     expect(() => tiptapToEditorData({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'X', marks: [{ type: 'strike' }] }] }] })).toThrow()
-    expect(() => tiptapToEditorData({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', attrs: { colspan: 2 }, content: [{ type: 'paragraph' }] }] }] }] })).toThrow()
+    expect(tiptapToEditorData({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', attrs: { colspan: 2 }, content: [{ type: 'paragraph' }] }] }] }] }).blocks[0]?.data.content)
+      .toEqual([[{ attrs: { colspan: 2 }, content: [{ type: 'paragraph', content: [] }] }]])
   })
 
   it('menyimpan editor kosong sebagai daftar blok kosong', () => {
@@ -69,4 +76,85 @@ describe('konversi editor Tiptap dan blok backend', () => {
     ] })).toThrow('Jenis font belum dapat disimpan ke dokumen.')
   })
 
+})
+
+describe('kontrak tabel FE 05', () => {
+  it('round-trips merge, width, row height, color, border and alignment attributes', () => {
+    const block = { type: 'table', data: {
+      withHeadings: true,
+      rowMinHeights: [null, 44],
+      content: [
+        [
+          { attrs: { colspan: 2, colwidth: [120, 90], align: 'center', verticalAlign: 'middle', backgroundColor: 'blue', border: false }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Gabungan' }] }] },
+          { attrs: { rowspan: 2, colwidth: [72] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Vertikal' }] }] },
+          { attrs: { colwidth: [80] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Kolom' }] }] },
+        ],
+        [
+          { attrs: { colwidth: [120] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Baris kedua' }] }] },
+          { attrs: { colwidth: [90] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Isi' }] }] },
+          { attrs: { colwidth: [80] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Ujung' }] }] },
+        ],
+      ],
+    } }
+    const html = editorDataToHtml({ blocks: [block] })
+    expect(html).toContain('colspan="2" colwidth="120,90" align="center" data-vertical-align="middle" data-cell-color="blue" data-cell-border="false"')
+    expect(html).toContain('rowspan="2" colwidth="72"')
+    expect(html).toContain('data-row-min-height-px="44" style="height:44px"')
+    expect(tiptapToEditorData({ type: 'doc', content: [{ type: 'table', attrs: { showBorders: true }, content: [
+      { type: 'tableRow', content: [
+        { type: 'tableHeader', attrs: { colspan: 2, rowspan: 1, colwidth: [120, 90], align: 'center', verticalAlign: 'middle', backgroundColor: 'blue', border: false }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Gabungan' }] }] },
+        { type: 'tableHeader', attrs: { colspan: 1, rowspan: 2, colwidth: [72], align: null, verticalAlign: 'top' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Vertikal' }] }] },
+        { type: 'tableHeader', attrs: { colspan: 1, rowspan: 1, colwidth: [80] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Kolom' }] }] },
+      ] },
+      { type: 'tableRow', attrs: { minHeightPx: 44 }, content: [
+        { type: 'tableCell', attrs: { colspan: 1, rowspan: 1, colwidth: [120] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Baris kedua' }] }] },
+        { type: 'tableCell', attrs: { colspan: 1, rowspan: 1, colwidth: [90] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Isi' }] }] },
+        { type: 'tableCell', attrs: { colspan: 1, rowspan: 1, colwidth: [80] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Ujung' }] }] },
+      ] },
+    ] }] })).toEqual({ blocks: [block] })
+  })
+
+  it('membagi dimensi menjadi rentang sel yang utuh dan menolak input tak valid', () => {
+    expect(splitTableRanges(5, 2)).toEqual([[0, 2], [2, 5]])
+    expect(splitTableRanges(4, 4)).toEqual([[0, 1], [1, 2], [2, 3], [3, 4]])
+    expect(() => splitTableRanges(2, 3)).toThrow('Pembagian tabel tidak valid.')
+  })
+
+  it('membagi sel biasa menjadi 2x2, menjaga isi asal di kiri atas, dan mengosongkan sel baru', () => {
+    const schema = getSchema([StarterKit, TableKit])
+    const doc = schema.nodeFromJSON({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [
+      { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Isi asal' }] }] },
+    ] }] }] })
+    let tablePosition = 0
+    doc.descendants((node, position) => { if (node.type.name === 'table') tablePosition = position })
+    let state = EditorState.create({ doc })
+    let table = state.doc.nodeAt(tablePosition)!
+    let map = TableMap.get(table)
+    state = state.apply(state.tr.setSelection(CellSelection.create(state.doc, tablePosition + 1 + map.map[0])))
+
+    const run = (command: typeof addRowAfter) => {
+      let transaction
+      expect(command(state, (next) => { transaction = next })).toBe(true)
+      if (transaction) state = state.apply(transaction)
+    }
+    run(addRowAfter)
+    run(addColumnAfter)
+    table = state.doc.nodeAt(tablePosition)!
+    map = TableMap.get(table)
+    state = state.apply(state.tr.setSelection(CellSelection.create(
+      state.doc,
+      tablePosition + 1 + map.map[0],
+      tablePosition + 1 + map.map[map.map.length - 1],
+    )))
+    run(mergeCells)
+    run(splitCell)
+
+    table = state.doc.nodeAt(tablePosition)!
+    map = TableMap.get(table)
+    expect(map.problems).toBeNull()
+    expect([map.width, map.height]).toEqual([2, 2])
+    expect(table.content.content.map((row) => row.childCount)).toEqual([2, 2])
+    expect(table.child(0).child(0).textContent).toBe('Isi asal')
+    expect(table.content.content.slice(0).flatMap((row) => row.content.content).slice(1).every((cell) => cell.textContent === '')).toBe(true)
+  })
 })

@@ -15,6 +15,9 @@ export const isDocumentFontFamily = (value: unknown): value is DocumentFontFamil
 
 const escapeHtml = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+const tableColors = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
+const tableAlignments = ['left', 'center', 'right', 'justify']
+const verticalAlignments = ['top', 'middle', 'bottom']
 
 function blockText(value: unknown) {
   if (typeof value !== 'string') throw new Error('Isi blok dokumen tidak valid.')
@@ -43,11 +46,52 @@ export function editorDataToHtml(data: EditorData): string {
       case 'table': {
         const rows = value.content as unknown[][]
         const table = value.showBorders === false ? '<table data-show-borders="false">' : '<table>'
-        return `${table}<tbody>${rows.map((row, index) => `<tr>${row.map((cell) => {
+        return `${table}<tbody>${rows.map((row, index) => {
+          const height = (value.rowMinHeights as unknown[] | undefined)?.[index]
+          if (height !== undefined && height !== null && (!Number.isInteger(height) || Number(height) < 1 || Number(height) > 1200))
+            throw new Error('Tinggi minimum baris tabel tidak valid.')
+          const rowAttribute = height === undefined || height === null ? '' : ` data-row-min-height-px="${height}" style="height:${height}px"`
+          return `<tr${rowAttribute}>${row.map((cell) => {
           const tag = value.withHeadings && index === 0 ? 'th' : 'td'
           if (typeof cell === 'string') return `<${tag}><p>${blockText(cell)}</p></${tag}>`
-          if (!Array.isArray(cell)) throw new Error('Isi sel tabel tidak valid.')
-          return `<${tag}>${cell.map((node) => {
+          let attrs: Record<string, unknown> = {}
+          let content: unknown[]
+          if (Array.isArray(cell)) content = cell
+          else if (cell && typeof cell === 'object' && !Array.isArray(cell)) {
+            const structured = cell as { attrs?: unknown; content?: unknown }
+            if (!structured.attrs || typeof structured.attrs !== 'object' || !Array.isArray(structured.content))
+              throw new Error('Isi sel tabel tidak valid.')
+            attrs = structured.attrs as Record<string, unknown>
+            content = structured.content
+          } else throw new Error('Isi sel tabel tidak valid.')
+          const colspan = Number(attrs.colspan ?? 1), rowspan = Number(attrs.rowspan ?? 1)
+          if (!Number.isInteger(colspan) || colspan < 1 || colspan > 20 || !Number.isInteger(rowspan) || rowspan < 1 || rowspan > 50)
+            throw new Error('Ukuran sel tabel tidak valid.')
+          let cellAttributes = colspan > 1 ? ` colspan="${colspan}"` : ''
+          if (rowspan > 1) cellAttributes += ` rowspan="${rowspan}"`
+          const widths = attrs.colwidth
+          if (widths != null) {
+            if (!Array.isArray(widths) || widths.length !== colspan || widths.some((width) => !Number.isInteger(width) || Number(width) < 32 || Number(width) > 2000))
+              throw new Error('Lebar kolom tabel tidak valid.')
+            cellAttributes += ` colwidth="${widths.join(',')}"`
+          }
+          if (attrs.align != null) {
+            if (!tableAlignments.includes(String(attrs.align))) throw new Error('Perataan sel tabel tidak valid.')
+            cellAttributes += ` align="${attrs.align}"`
+          }
+          if (attrs.verticalAlign != null && attrs.verticalAlign !== 'top') {
+            if (!verticalAlignments.includes(String(attrs.verticalAlign))) throw new Error('Perataan vertikal sel tabel tidak valid.')
+            cellAttributes += ` data-vertical-align="${attrs.verticalAlign}"`
+          }
+          if (attrs.backgroundColor != null) {
+            if (!tableColors.includes(String(attrs.backgroundColor))) throw new Error('Warna sel tabel tidak valid.')
+            cellAttributes += ` data-cell-color="${attrs.backgroundColor}"`
+          }
+          if (attrs.border != null) {
+            if (typeof attrs.border !== 'boolean') throw new Error('Pilihan garis sel tabel tidak valid.')
+            cellAttributes += ` data-cell-border="${attrs.border}"`
+          }
+          return `<${tag}${cellAttributes}>${content.map((node) => {
             if (!node || typeof node !== 'object') throw new Error('Isi sel tabel tidak valid.')
             const item = node as TiptapNode & { file?: { url?: unknown }; caption?: unknown }
             if (item.type === 'paragraph') return `<p>${inlineHtml(item.content)}</p>`
@@ -59,7 +103,8 @@ export function editorDataToHtml(data: EditorData): string {
             }
             throw new Error('Blok sel tabel tidak didukung.')
           }).join('')}</${tag}>`
-        }).join('')}</tr>`).join('')}</tbody></table>`
+        }).join('')}</tr>`
+        }).join('')}</tbody></table>`
       }
       case 'image': {
         const src = (value.file as { url?: unknown })?.url
@@ -120,12 +165,43 @@ function listItems(node: TiptapNode, depth = 1): unknown[] {
 }
 
 function tableData(node: TiptapNode) {
+  const rowMinHeights: (number | null)[] = []
   const rows = (node.content ?? []).map((row) => {
     if (row.type !== 'tableRow') throw new Error('Struktur tabel tidak didukung.')
+    const minHeightPx = row.attrs?.minHeightPx
+    if (minHeightPx != null && (!Number.isInteger(minHeightPx) || Number(minHeightPx) < 1 || Number(minHeightPx) > 1200))
+      throw new Error('Tinggi minimum baris tabel tidak valid.')
+    rowMinHeights.push(minHeightPx == null ? null : Number(minHeightPx))
     return (row.content ?? []).map((cell) => {
       if (!['tableCell', 'tableHeader'].includes(cell.type)) throw new Error('Struktur sel tabel tidak didukung.')
-      if (Number(cell.attrs?.colspan ?? 1) !== 1 || Number(cell.attrs?.rowspan ?? 1) !== 1)
-        throw new Error('Penggabungan sel tabel belum didukung PDF backend.')
+      const attrs = cell.attrs ?? {}
+      const colspan = Number(attrs.colspan ?? 1), rowspan = Number(attrs.rowspan ?? 1)
+      if (!Number.isInteger(colspan) || colspan < 1 || colspan > 20 || !Number.isInteger(rowspan) || rowspan < 1 || rowspan > 50)
+        throw new Error('Ukuran sel tabel tidak valid.')
+      const cellAttrs: Record<string, unknown> = {}
+      if (colspan > 1) cellAttrs.colspan = colspan
+      if (rowspan > 1) cellAttrs.rowspan = rowspan
+      if (attrs.colwidth != null) {
+        if (!Array.isArray(attrs.colwidth) || attrs.colwidth.length !== colspan || attrs.colwidth.some((width) => !Number.isInteger(width) || Number(width) < 32 || Number(width) > 2000))
+          throw new Error('Lebar kolom tabel tidak valid.')
+        cellAttrs.colwidth = attrs.colwidth
+      }
+      if (attrs.align != null) {
+        if (!tableAlignments.includes(String(attrs.align))) throw new Error('Perataan sel tabel tidak valid.')
+        cellAttrs.align = attrs.align
+      }
+      if (attrs.verticalAlign != null && attrs.verticalAlign !== 'top') {
+        if (!verticalAlignments.includes(String(attrs.verticalAlign))) throw new Error('Perataan vertikal sel tabel tidak valid.')
+        cellAttrs.verticalAlign = attrs.verticalAlign
+      }
+      if (attrs.backgroundColor != null) {
+        if (!tableColors.includes(String(attrs.backgroundColor))) throw new Error('Warna sel tabel tidak valid.')
+        cellAttrs.backgroundColor = attrs.backgroundColor
+      }
+      if (attrs.border != null) {
+        if (typeof attrs.border !== 'boolean') throw new Error('Pilihan garis sel tabel tidak valid.')
+        cellAttrs.border = attrs.border
+      }
       const content = (cell.content ?? []).map((block) => {
         if (block.type === 'paragraph') {
           inlineHtml(block.content)
@@ -145,13 +221,18 @@ function tableData(node: TiptapNode) {
         }
         throw new Error('Blok sel tabel belum didukung PDF backend.')
       })
-      return { header: cell.type === 'tableHeader', content }
+      return { header: cell.type === 'tableHeader', content: Object.keys(cellAttrs).length ? { attrs: cellAttrs, content } : content }
     })
   })
   const withHeadings = !!rows[0]?.length && rows[0].every((cell) => cell.header)
   if (rows.some((row, index) => row.some((cell) => cell.header !== (withHeadings && index === 0))))
     throw new Error('Hanya baris pertama yang dapat menjadi judul tabel.')
-  return { withHeadings, ...(node.attrs?.showBorders === false ? { showBorders: false } : {}), content: rows.map((row) => row.map((cell) => cell.content)) }
+  return {
+    withHeadings,
+    ...(node.attrs?.showBorders === false ? { showBorders: false } : {}),
+    ...(rowMinHeights.some((height) => height !== null) ? { rowMinHeights } : {}),
+    content: rows.map((row) => row.map((cell) => cell.content)),
+  }
 }
 
 export function tiptapToEditorData(doc: TiptapNode): EditorData {
