@@ -3,6 +3,14 @@ export interface User {
   name: string
   email: string
   email_verified: boolean
+  login_methods?: ('email_password' | 'google')[]
+  capabilities?: {
+    can_change_name: boolean
+    can_change_photo: boolean
+    can_change_email: boolean
+    can_change_password: boolean
+  }
+  photo_url?: string | null
 }
 export interface LoginPayload {
   email: string

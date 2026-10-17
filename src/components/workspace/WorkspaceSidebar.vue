@@ -7,17 +7,17 @@ import { language, setWorkspaceLanguage, t } from '../../services/workspace-lang
 const props = defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const route = useRoute()
-const documentsOpen = ref(route.path.startsWith('/documents'))
-const signsOpen = ref(route.path === '/signature-assets')
+const documentsOpen = ref(route.path.startsWith('/documents') || route.path === '/categories')
+const signsOpen = ref(route.path === '/signature-assets' || route.path === '/history')
 const flyout = ref('')
 const languageOpen = ref(false)
 const compact = computed(() => props.collapsed && !props.mobileOpen)
-const onDocuments = computed(() => route.path.startsWith('/documents'))
-const onSigns = computed(() => route.path === '/signature-assets')
+const onDocuments = computed(() => route.path.startsWith('/documents') || route.path === '/categories')
+const onSigns = computed(() => route.path === '/signature-assets' || route.path === '/history')
 
 watch(() => route.path, (_path, previousPath) => {
-  if (onDocuments.value !== previousPath.startsWith('/documents') || !onDocuments.value) documentsOpen.value = onDocuments.value
-  if (onSigns.value !== (previousPath === '/signature-assets') || !onSigns.value) signsOpen.value = onSigns.value
+  if (onDocuments.value !== (previousPath.startsWith('/documents') || previousPath === '/categories') || !onDocuments.value) documentsOpen.value = onDocuments.value
+  if (onSigns.value !== (previousPath === '/signature-assets' || previousPath === '/history') || !onSigns.value) signsOpen.value = onSigns.value
   flyout.value = ''
   languageOpen.value = false
 })
@@ -92,14 +92,18 @@ function chooseLanguage(value: 'id' | 'en') {
           class="mt-2 grid gap-1 rounded-xl border border-line bg-[#fbfcfb] p-2"
           :class="compact && 'absolute top-0 left-full z-60 ml-3 mt-0 w-56 shadow-xl'"
         >
-          <p class="rounded-lg px-3 py-2.5 text-sm text-muted" :title="t('Fitur ini belum tersedia.')">
-            {{ t('Kategori Dokumen') }}<span class="mt-1 block text-xs text-muted">{{ t('Fitur ini belum tersedia.') }}</span>
-          </p>
+          <RouterLink
+            to="/categories"
+            class="rounded-lg px-3 py-2.5 text-sm"
+            :class="route.path === '/categories' ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
+            :aria-current="route.path === '/categories' ? 'page' : undefined"
+            @click="emit('close')"
+          >{{ t('Kategori Dokumen') }}</RouterLink>
           <RouterLink
             to="/documents"
             class="rounded-lg px-3 py-2.5 text-sm"
-            :class="onDocuments ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
-            :aria-current="onDocuments ? 'page' : undefined"
+            :class="route.path.startsWith('/documents') ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
+            :aria-current="route.path.startsWith('/documents') ? 'page' : undefined"
             @click="emit('close')"
           >{{ t('Dokumen Saya') }}</RouterLink>
         </div>
@@ -131,13 +135,17 @@ function chooseLanguage(value: 'id' | 'en') {
           <RouterLink
             to="/signature-assets"
             class="rounded-lg px-3 py-2.5 text-sm"
-            :class="onSigns ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
-            :aria-current="onSigns ? 'page' : undefined"
+            :class="route.path === '/signature-assets' ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
+            :aria-current="route.path === '/signature-assets' ? 'page' : undefined"
             @click="emit('close')"
           >{{ t('Tanda Tangan Saya') }}</RouterLink>
-          <p class="rounded-lg px-3 py-2.5 text-sm text-muted" :title="t('Fitur ini belum tersedia.')">
-            {{ t('Riwayat Tanda Tangan') }}<span class="mt-1 block text-xs text-muted">{{ t('Fitur ini belum tersedia.') }}</span>
-          </p>
+          <RouterLink
+            to="/history"
+            class="rounded-lg px-3 py-2.5 text-sm"
+            :class="route.path === '/history' ? 'bg-sage font-semibold text-primary' : 'text-muted hover:bg-sage/60'"
+            :aria-current="route.path === '/history' ? 'page' : undefined"
+            @click="emit('close')"
+          >{{ t('Riwayat Tanda Tangan') }}</RouterLink>
         </div>
         </Transition>
       </section>

@@ -1,20 +1,41 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { documentsApi } from '../../services/documents.service'
+import { categoriesApi } from '../../services/categories.service'
+import { useAuthStore } from '../../stores/auth'
 import { workspaceError } from '../../services/workspace.errors'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { confirmAction, notify } from '../../services/feedback'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import FormField from '../ui/FormField.vue'
+import SelectControl from '../ui/SelectControl.vue'
 import { t } from '../../services/workspace-language'
 
 const router = useRouter()
+const auth = useAuthStore()
 const dialog = ref<HTMLDialogElement>()
 const title = ref('')
+const categoryGuid = ref('')
+const categories = ref<{ guid: string; name: string }[]>([])
+const categoryOptions = computed(() => [
+  { value: '', label: t('Tanpa kategori') },
+  ...categories.value.map(({ guid, name }) => ({ value: guid, label: name })),
+])
+const categoryError = ref('')
 const attempted = ref(false)
 const { busy, error, fields, run } = useWorkspaceRequest()
+
+onMounted(async () => {
+  try {
+    categories.value = await categoriesApi.list()
+  } catch (cause) {
+    categoryError.value = workspaceError(cause).message
+    if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
+  }
+})
 
 async function createDraft() {
   if (!title.value.trim() || attempted.value || busy.value) return
@@ -34,7 +55,18 @@ async function createDraft() {
     }
   })
   if (document) {
-    notify.success('Draft berhasil dibuat.')
+    let categoryNotSaved = false
+    if (categoryGuid.value) {
+      try {
+        await documentsApi.assignCategory(document.guid, categoryGuid.value)
+      } catch (cause) {
+        categoryNotSaved = true
+        if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
+      }
+    }
+    notify[categoryNotSaved ? 'error' : 'success'](t(categoryNotSaved
+      ? 'Draft dibuat, tetapi kategorinya belum tersimpan. Anda dapat memilih kategori dari daftar dokumen.'
+      : 'Draft berhasil dibuat.'))
     await router.push(`/documents/${document.guid}/edit`)
   }
 }
@@ -67,6 +99,11 @@ async function createDraft() {
           :error="fields.title"
           :disabled="busy || attempted"
         />
+        <div class="mb-[18px] grid gap-[7px] text-xs font-semibold">
+          {{ t('Kategori (opsional)') }}
+          <SelectControl v-model="categoryGuid" :ariaLabel="t('Kategori (opsional)')" class="min-h-11 w-full text-sm font-normal" :options="categoryOptions" :disabled="busy || attempted || !!categoryError" />
+        </div>
+        <FeedbackMessage v-if="categoryError" :message="t(categoryError)" error />
         <p v-if="attempted && error" class="pb-4 text-sm text-muted">
           {{ t('Hasil permintaan belum pasti. Periksa daftar dokumen sebelum memuat ulang halaman untuk mencoba lagi.') }}
         </p>

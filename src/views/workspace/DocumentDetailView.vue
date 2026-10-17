@@ -141,7 +141,7 @@ onUnmounted(() => {
 <template>
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
-      <RouterLink to="/documents" class="text-xs text-primary underline">← {{ t('Dokumen Saya') }}</RouterLink>
+      <RouterLink :to="{ path: '/documents', query: route.query }" class="text-xs text-primary underline">← {{ t('Dokumen Saya') }}</RouterLink>
       <h1 class="mt-3 text-3xl font-semibold wrap-anywhere">
         <span class="text-muted">{{ t('Dokumen:') }}</span> {{ document?.title || t('Detail dokumen') }}
       </h1>

@@ -64,9 +64,21 @@ export interface DocumentRecord {
   title: string
   status: string
   owner_guid: string
+  category_guid?: string | null
+  category?: DocumentCategory | null
   current_version: DocumentVersion
   created_at: string
   updated_at: string
+}
+export type CategoryColor = 'gray' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'purple'
+export interface DocumentCategory {
+  guid: string
+  name: string
+  color_token: CategoryColor
+  description: string | null
+  documents_count?: number
+  created_at?: string
+  updated_at?: string
 }
 export interface Page<T> {
   data: T[]

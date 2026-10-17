@@ -30,6 +30,16 @@ const router = createRouter({
           meta: { title: 'Dokumen Saya' },
         },
         {
+          path: '/categories',
+          component: () => import('../views/workspace/CategoriesView.vue'),
+          meta: { title: 'Kategori Dokumen' },
+        },
+        {
+          path: '/history',
+          component: () => import('../views/workspace/SigningHistoryView.vue'),
+          meta: { title: 'Riwayat Tanda Tangan' },
+        },
+        {
           path: '/documents/:documentGuid([0-9a-fA-F-]{36})',
           component: () => import('../views/workspace/DocumentDetailView.vue'),
           meta: { title: 'Detail dokumen' },
@@ -81,6 +91,11 @@ const router = createRouter({
       component: () => import('../views/auth/EmailVerificationView.vue'),
       props: { result: true },
       meta: { title: 'Status verifikasi email' },
+    },
+    {
+      path: '/email/changed',
+      component: () => import('../views/auth/EmailChangedView.vue'),
+      meta: { title: 'Perubahan email' },
     },
     {
       path: '/forgot-password',

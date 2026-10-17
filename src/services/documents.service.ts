@@ -24,12 +24,26 @@ async function write<T>(path: string, payload: unknown, method: 'post' | 'put' |
   return (await mutation<{ data: T }>(`/api/v1${path}`, payload, method)).data
 }
 export const documentsApi = {
-  list: (page = 1, status = '', perPage = 15) =>
-    get<Page<DocumentRecord>>('/documents', { page, per_page: perPage, ...(status ? { status } : {}) }),
+  list: (filters: { page?: number; status?: string; perPage?: number; q?: string; categoryGuid?: string; uncategorized?: boolean } = {}) =>
+    get<Page<DocumentRecord>>('/documents', {
+      page: filters.page ?? 1,
+      per_page: filters.perPage ?? 15,
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.q ? { q: filters.q } : {}),
+      ...(filters.categoryGuid ? { category_guid: filters.categoryGuid } : {}),
+      ...(filters.uncategorized ? { uncategorized: 1 } : {}),
+    }),
   count: (status = '') =>
     get<Page<DocumentRecord>>('/documents', { page: 1, per_page: 1, ...(status ? { status } : {}) }),
   detail: (guid: string) =>
     get<{ data: DocumentRecord }>(`/documents/${encodeURIComponent(guid)}`).then((r) => r.data),
+  assignCategory: (guid: string, categoryGuid: string | null) =>
+    write<DocumentRecord>(`/documents/${encodeURIComponent(guid)}/category`, { category_guid: categoryGuid }, 'patch'),
+  bulkAssignCategory: (documentGuids: string[], categoryGuid: string | null) =>
+    write<{ updated_count: number; category_guid: string | null }>('/documents/categories', {
+      document_guids: documentGuids,
+      category_guid: categoryGuid,
+    }, 'patch'),
   version: (guid: string) =>
     get<{ data: DocumentVersion }>(`/versions/${encodeURIComponent(guid)}`).then((r) => r.data),
   create: (title: string) => write<DocumentRecord>('/documents', { title }),
