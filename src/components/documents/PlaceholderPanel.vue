@@ -8,6 +8,7 @@ import { roundPosition, validPlaceholder } from '../../utils/documents'
 import PdfViewer from './PdfViewer.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import SelectControl from '../ui/SelectControl.vue'
 import { confirmAction, notify } from '../../services/feedback'
 import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{
@@ -183,17 +184,21 @@ async function removeArea(index: number) {
     </div>
     <section class="min-w-0 rounded-xl border border-line bg-white p-4">
       <h2 class="mb-4 font-semibold">{{ t('Posisi tanda tangan') }}</h2>
-      <FeedbackMessage :message="t(error)" error /><label class="grid gap-2 text-xs"
-        >{{ t('Penerima') }}<select
+      <FeedbackMessage :message="t(error)" error />
+      <div class="grid gap-2 text-xs">
+        {{ t('Penerima') }}
+        <SelectControl
           v-model="selected"
-          class="min-h-11 w-full rounded border border-line px-2"
+          :aria-label="t('Penerima')"
+          class="w-full min-h-11"
+          :options="assignments.map((a) => ({
+            value: a.guid,
+            label: `${formatNumber(a.sequence_number)}. ${a.recipient_email}`,
+          }))"
           :disabled="busy"
-        >
-          <option v-for="a in assignments" :key="a.guid" :value="a.guid">
-            {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }}
-          </option>
-        </select></label
-      ><button
+        />
+      </div>
+      <button
         class="my-3 min-h-11 text-sm text-primary underline"
         :disabled="busy || !pdfValid"
         @click="add(1)"

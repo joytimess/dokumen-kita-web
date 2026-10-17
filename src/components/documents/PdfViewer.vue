@@ -15,6 +15,7 @@ import { createReadGate } from '../../utils/readGate'
 import { findTextMatches, type TextMatch } from '../../utils/pdfSearch'
 import type { Placeholder } from '../../types/documents'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import SelectControl from '../ui/SelectControl.vue'
 import { formatNumber, t } from '../../services/workspace-language'
 GlobalWorkerOptions.workerSrc = workerUrl
 const props = defineProps<{
@@ -274,8 +275,7 @@ function nextHit(delta: number) {
     scrollToHit()
   }
 }
-function changeZoom(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
+function changeZoom(value: string | number) {
   fit.value = value === 'fit'
   if (!fit.value) zoom.value = Number(value)
 }
@@ -368,18 +368,19 @@ onUnmounted(() => {
           :max="count"
         /><button class="min-h-11 px-2 text-primary">{{ t('Buka') }}</button>
       </form>
-      <label class="flex items-center gap-2"
-        >{{ t('Zoom') }}<select
-          :value="fit ? 'fit' : zoom"
-          class="min-h-11 rounded border border-line px-2"
+      <div class="flex items-center gap-2">
+        {{ t('Zoom') }}
+        <SelectControl
+          :model-value="fit ? 'fit' : zoom"
+          :aria-label="t('Zoom')"
+          class="min-h-11"
+          :options="[
+            { value: 'fit', label: t('Sesuai lebar') },
+            ...[0.5, 0.75, 1, 1.25, 1.5, 2].map((scale) => ({ value: scale, label: `${scale * 100}%` })),
+          ]"
           @change="changeZoom"
-        >
-          <option value="fit">{{ t('Sesuai lebar') }}</option>
-          <option v-for="scale in [0.5, 0.75, 1, 1.25, 1.5, 2]" :key="scale" :value="scale">
-            {{ scale * 100 }}%
-          </option>
-        </select></label
-      >
+        />
+      </div>
     </div>
     <form class="mb-3 flex flex-wrap items-center gap-2 text-xs" @submit.prevent="search">
       <label class="sr-only" for="pdf-search">{{ t('Cari teks PDF') }}</label

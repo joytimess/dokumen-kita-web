@@ -10,6 +10,7 @@ import type { DocumentRecord, Page } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import CreateDocumentButton from '../../components/documents/CreateDocumentButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
+import SelectControl from '../../components/ui/SelectControl.vue'
 import { formatNumber, language, t } from '../../services/workspace-language'
 
 const route = useRoute()
@@ -236,23 +237,33 @@ onUnmounted(() => {
         {{ t('Cari di halaman ini') }}
         <input v-model="query" type="search" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink" :placeholder="t('Cari judul di halaman ini')" />
       </label>
-      <label v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
+      <div v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
         {{ t('Status') }}
-        <select v-model="status" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink">
-          <option value="">{{ t('Semua status') }}</option>
-          <option value="draft">{{ t('Draft') }}</option>
-          <option value="in_progress">{{ t('Dalam proses') }}</option>
-          <option value="finalizing">{{ t('Finalisasi') }}</option>
-          <option value="completed">{{ t('Selesai') }}</option>
-        </select>
-      </label>
-      <label class="grid gap-2 text-xs font-medium text-muted">
+        <SelectControl
+          v-model="status"
+          :aria-label="t('Status')"
+          class="min-h-11 text-sm"
+          :options="[
+            { value: '', label: t('Semua status') },
+            { value: 'draft', label: t('Draft') },
+            { value: 'in_progress', label: t('Dalam proses') },
+            { value: 'finalizing', label: t('Finalisasi') },
+            { value: 'completed', label: t('Selesai') },
+          ]"
+        />
+      </div>
+      <div class="grid gap-2 text-xs font-medium text-muted">
         {{ t('Urutkan') }}
-        <select v-model="sort" class="min-h-11 rounded-xl border border-line bg-white px-3 text-sm text-ink">
-          <option value="created">{{ t('Terbaru dibuat') }}</option>
-          <option value="title">{{ t('Judul A–Z di halaman ini') }}</option>
-        </select>
-      </label>
+        <SelectControl
+          v-model="sort"
+          :aria-label="t('Urutkan')"
+          class="min-h-11 text-sm"
+          :options="[
+            { value: 'created', label: t('Terbaru dibuat') },
+            { value: 'title', label: t('Judul A–Z di halaman ini') },
+          ]"
+        />
+      </div>
     </div>
     <p class="mb-4 text-xs text-muted">{{ t('Pencarian dan urutan judul berlaku pada halaman ini.') }}</p>
 
@@ -296,14 +307,20 @@ onUnmounted(() => {
     </div>
 
     <nav v-if="page" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
-      <label class="flex items-center gap-2 text-xs font-medium text-muted">
+      <div class="flex items-center gap-2 text-xs font-medium text-muted">
         {{ t('Tampilkan baris') }}
-        <select v-model.number="perPage" class="h-9 rounded-md border border-line bg-white px-2 text-sm text-ink" @change="pageTo(1)">
-          <option :value="10">10</option>
-          <option :value="25">25</option>
-          <option :value="50">50</option>
-        </select>
-      </label>
+        <SelectControl
+          v-model="perPage"
+          :aria-label="t('Tampilkan baris')"
+          class="h-9 text-sm"
+          :options="[
+            { value: 10, label: '10' },
+            { value: 25, label: '25' },
+            { value: 50, label: '50' },
+          ]"
+          @change="pageTo(1)"
+        />
+      </div>
       <div class="ml-auto flex flex-wrap items-center gap-2">
         <span class="mr-1 text-xs text-muted">{{ t('Menampilkan :start–:end dari :total', { start: numberLabel(showingStart), end: numberLabel(showingEnd), total: numberLabel(page.meta.total) }) }}</span>
         <button type="button" class="grid size-9 place-items-center rounded-md border border-line bg-white text-ink hover:bg-soft disabled:text-muted disabled:opacity-50" :aria-label="t('Sebelumnya')" :disabled="listLoading || !page.links.prev" @click="pageTo(page.meta.current_page - 1)">

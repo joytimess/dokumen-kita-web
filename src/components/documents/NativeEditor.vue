@@ -21,6 +21,7 @@ const editor = shallowRef<Editor>()
 const fileInput = ref<HTMLInputElement>()
 const error = ref('')
 const toolbarVersion = ref(0)
+const formatMenu = ref<HTMLDetailsElement | null>(null)
 let disposed = false
 let locked = false
 
@@ -37,11 +38,24 @@ function selectedFontFamily() {
   const value = editor.value?.getAttributes('fontFamily').fontFamily
   return isDocumentFontFamily(value) ? value : ''
 }
-function formatFont(event: Event) {
+function selectedBlock(level: number) {
+  void toolbarVersion.value
+  return level
+    ? editor.value?.isActive('heading', { level }) ?? false
+    : editor.value?.isActive('paragraph') ?? false
+}
+function closeFormatMenu() {
+  if (formatMenu.value) formatMenu.value.open = false
+}
+function closeFormatMenuOnFocusout(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (!(next instanceof Node) || !formatMenu.value?.contains(next)) closeFormatMenu()
+}
+function formatFont(fontFamily: string) {
   if (!editor.value || locked) return
-  const fontFamily = (event.target as HTMLSelectElement).value
   if (isDocumentFontFamily(fontFamily)) editor.value.chain().focus().setMark('fontFamily', { fontFamily }).run()
   else editor.value.chain().focus().unsetMark('fontFamily').run()
+  closeFormatMenu()
 }
 function listDepth() {
   const selection = editor.value?.state.selection.$from
@@ -320,11 +334,11 @@ async function lock() {
 }
 defineExpose({ capture, render, lock, showCellError })
 
-function formatBlock(event: Event) {
-  const level = Number((event.target as HTMLSelectElement).value)
+function formatBlock(level: number) {
   if (!editor.value || locked) return
   if (level) editor.value.chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run()
   else editor.value.chain().focus().setParagraph().run()
+  closeFormatMenu()
 }
 function link() {
   if (!editor.value || locked) return
@@ -416,14 +430,38 @@ onUnmounted(() => {
   <div>
     <FeedbackMessage :message="t(error)" error />
     <div v-if="editor && !readonly" role="toolbar" :aria-label="t('Format dokumen')" class="mb-2 flex flex-wrap items-center gap-1 rounded-xl border border-line bg-white p-2 text-ink">
-      <select class="h-10 rounded border border-line bg-white px-2 text-sm" :aria-label="t('Jenis paragraf')" :title="t('Jenis paragraf')" @change="formatBlock">
-        <option value="0">{{ t('Normal') }}</option>
-        <option v-for="level in 6" :key="level" :value="level">{{ t('Judul :number', { number: level }) }}</option>
-      </select>
-      <select class="h-10 rounded border border-line bg-white px-2 text-sm" :value="selectedFontFamily()" :aria-label="t('Jenis font')" :title="t('Jenis font')" @change="formatFont">
-        <option value="">{{ t('Default (DejaVu Sans)') }}</option>
-        <option v-for="fontFamily in documentFontFamilies" :key="fontFamily" :value="fontFamily">{{ fontFamily }}</option>
-      </select>
+      <details
+        ref="formatMenu"
+        class="editor-format-menu relative"
+        @keydown.esc.prevent="closeFormatMenu"
+        @focusout="closeFormatMenuOnFocusout"
+      >
+        <summary class="editor-format-summary inline-flex h-10 cursor-pointer items-center gap-2 rounded border border-line bg-white px-3 text-sm text-ink hover:bg-soft">
+          <span class="material-symbols-outlined" aria-hidden="true">format_size</span>
+          <span>{{ t('Format dokumen') }}</span>
+          <span class="editor-format-chevron material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        </summary>
+        <div class="absolute left-0 top-full z-30 mt-2 max-h-80 w-64 overflow-y-auto rounded-xl border border-line bg-white p-1.5 shadow-lg">
+          <div class="px-2 pb-1 pt-2 text-xs font-semibold text-muted">{{ t('Jenis paragraf') }}</div>
+          <button type="button" class="editor-format-item" :aria-pressed="selectedBlock(0)" @click="formatBlock(0)">
+            <span class="material-symbols-outlined" aria-hidden="true">subject</span>
+            <span>{{ t('Normal') }}</span>
+          </button>
+          <button v-for="level in 6" :key="level" type="button" class="editor-format-item" :aria-pressed="selectedBlock(level)" @click="formatBlock(level)">
+            <span class="material-symbols-outlined" aria-hidden="true">{{ `format_h${level}` }}</span>
+            <span>{{ t('Judul :number', { number: level }) }}</span>
+          </button>
+          <div class="px-2 pb-1 pt-3 text-xs font-semibold text-muted">{{ t('Jenis font') }}</div>
+          <button type="button" class="editor-format-item" :aria-pressed="selectedFontFamily() === ''" @click="formatFont('')">
+            <span class="material-symbols-outlined" aria-hidden="true">text_fields</span>
+            <span>{{ t('Default (DejaVu Sans)') }}</span>
+          </button>
+          <button v-for="fontFamily in documentFontFamilies" :key="fontFamily" type="button" class="editor-format-item" :aria-pressed="selectedFontFamily() === fontFamily" @click="formatFont(fontFamily)">
+            <span class="material-symbols-outlined" aria-hidden="true">font_download</span>
+            <span>{{ fontFamily }}</span>
+          </button>
+        </div>
+      </details>
       <div class="flex rounded border border-line" role="group" :aria-label="t('Gaya teks')">
         <button type="button" class="editor-tool" :aria-label="t('Tebal')" :title="t('Tebal')" :aria-pressed="active('bold')" @click="editor.chain().focus().toggleBold().run()"><span class="material-symbols-outlined" aria-hidden="true">format_bold</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Miring')" :title="t('Miring')" :aria-pressed="active('italic')" @click="editor.chain().focus().toggleItalic().run()"><span class="material-symbols-outlined" aria-hidden="true">format_italic</span></button>
@@ -519,6 +557,26 @@ onUnmounted(() => {
 .editor-tool:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: -2px;
+}
+.editor-format-summary { list-style: none; }
+.editor-format-summary::-webkit-details-marker { display: none; }
+.editor-format-chevron { transition: transform 180ms ease-in-out; }
+.editor-format-menu[open] .editor-format-chevron { transform: rotate(90deg); }
+.editor-format-item {
+  display: flex;
+  width: 100%;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  text-align: left;
+}
+.editor-format-item:hover,
+.editor-format-item[aria-pressed='true'] { background: var(--color-sage); }
+.editor-format-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) {
+  .editor-format-chevron { transition: none; }
 }
 .material-symbols-outlined {
   font-size: 20px;

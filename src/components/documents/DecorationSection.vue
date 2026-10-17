@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DecorationDraft, DecorationKind } from '../../utils/decorations'
 import { t } from '../../services/workspace-language'
+import SelectControl from '../ui/SelectControl.vue'
 
 defineProps<{
   kind: DecorationKind
@@ -55,18 +56,20 @@ const emit = defineEmits<{
     </p>
 
     <div v-if="(hasSaved || draft.file) && !draft.remove" class="mt-4 grid gap-3 text-sm">
-      <label
-        >{{ t('Cakupan halaman') }}
-        <select
+      <div>
+        {{ t('Cakupan halaman') }}
+        <SelectControl
           v-model="draft.mode"
-          class="ml-2 min-h-11 rounded border border-line px-3"
+          :aria-label="t('Cakupan halaman')"
+          class="ml-2 min-h-11"
+          :options="[
+            { value: 'all', label: t('Semua halaman') },
+            { value: 'range', label: t('Halaman tertentu') },
+          ]"
           :disabled="saving"
           @change="emit('edit')"
-        >
-          <option value="all">{{ t('Semua halaman') }}</option>
-          <option value="range">{{ t('Halaman tertentu') }}</option>
-        </select>
-      </label>
+        />
+      </div>
       <label v-if="draft.mode === 'range'" class="grid gap-1"
         >{{ t('Nomor/rentang halaman') }}
         <input
