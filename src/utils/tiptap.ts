@@ -8,6 +8,11 @@ export interface TiptapNode {
   content?: TiptapNode[]
 }
 
+export const documentFontFamilies = ['Arial', 'Calibri', 'Times New Roman', 'Aptos', 'Georgia'] as const
+export type DocumentFontFamily = typeof documentFontFamilies[number]
+export const isDocumentFontFamily = (value: unknown): value is DocumentFontFamily =>
+  documentFontFamilies.includes(value as DocumentFontFamily)
+
 const escapeHtml = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
@@ -79,6 +84,12 @@ function inlineHtml(nodes: TiptapNode[] = []): string {
         case 'underline': html = `<u>${html}</u>`; break
         case 'code': html = `<code>${html}</code>`; break
         case 'highlight': html = `<mark>${html}</mark>`; break
+        case 'fontFamily': {
+          const fontFamily = mark.attrs?.fontFamily
+          if (!isDocumentFontFamily(fontFamily)) throw new Error('Jenis font belum dapat disimpan ke dokumen.')
+          html = `<span data-font-family="${fontFamily}">${html}</span>`
+          break
+        }
         case 'link': {
           const href = mark.attrs?.href
           if (typeof href !== 'string' || !/^(https?:\/\/|mailto:)/i.test(href))
@@ -121,7 +132,9 @@ function tableData(node: TiptapNode) {
           return { type: 'paragraph', content: (block.content ?? []).map((inline) => {
             if (inline.type === 'hardBreak') return { type: 'hardBreak' }
             return { type: 'text', text: inline.text, ...(inline.marks?.length ? { marks: inline.marks.map((mark) =>
-              mark.type === 'link' ? { type: 'link', attrs: { href: mark.attrs?.href } } : { type: mark.type },
+              mark.type === 'link' ? { type: 'link', attrs: { href: mark.attrs?.href } }
+                : mark.type === 'fontFamily' ? { type: 'fontFamily', attrs: { fontFamily: mark.attrs?.fontFamily } }
+                  : { type: mark.type },
             ) } : {}) }
           }) }
         }

@@ -2,9 +2,9 @@ import DOMPurify from 'dompurify'
 import type { EditorData } from '../types/documents'
 const clean = (value: unknown): string =>
   DOMPurify.sanitize(String(value ?? ''), {
-    ALLOWED_TAGS: ['b', 'i', 'u', 'strong', 'em', 'mark', 'code', 'br', 'a'],
-    ALLOWED_ATTR: ['href'],
-    ALLOW_DATA_ATTR: false,
+    ALLOWED_TAGS: ['b', 'i', 'u', 'strong', 'em', 'mark', 'code', 'br', 'a', 'span'],
+    ALLOWED_ATTR: ['href', 'data-font-family'],
+    ALLOW_DATA_ATTR: true,
   })
 function listItems(items: unknown[], depth = 1): unknown[] {
   if (!items.length) return []

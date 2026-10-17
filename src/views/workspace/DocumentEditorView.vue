@@ -98,6 +98,12 @@ const {
   },
   rebuildPreview,
 })
+const hasDecorations = computed(() =>
+  (['letterhead', 'footer'] as const).some((kind) => {
+    const draft = decorations.value[kind]
+    return !draft.remove && (!!draft.file || !!document.value?.current_version[kind])
+  }),
+)
 
 const { sourceUrl, sourceBusy, importUncertain, upload, retryConversion, openSource, clearSource } =
   useSourceFile({
@@ -597,14 +603,6 @@ onUnmounted(() => {
 
   <FeedbackMessage :message="t(error || editorError)" error />
   <FeedbackMessage :message="t(message)" />
-  <button
-    v-if="document"
-    class="mb-4 min-h-11 text-xs text-primary underline"
-    :disabled="busy || decorationSaving"
-    @click="refreshMetadata"
-  >
-    {{ t('Periksa status versi') }}
-  </button>
   <p v-for="(text, key) in fields" :key="key" class="mb-2 text-sm text-error">{{ t(text) }}</p>
   <p v-if="busy && !document" role="status">{{ t('Memuat draft…') }}</p>
   <button v-if="error && !document" class="min-h-11 text-primary underline" @click="load">
@@ -726,19 +724,26 @@ onUnmounted(() => {
           @edit="reviewed = false"
         />
 
-        <label class="grid gap-2 text-xs font-semibold">{{ t('Isi Dokumen') }}</label>
-        <NativeEditor
-          v-if="saver"
-          :key="document.current_version.conversion_status"
-          ref="editor"
-          :data="content"
-          :readonly="
-            ['queued', 'processing'].includes(document.current_version.conversion_status ?? '')
-          "
-          @pending="pendingEditor = true"
-          @change="changed"
-          @invalid="editorError = $event"
-        />
+        <section class="rounded-xl border border-line bg-white p-5" :aria-label="t('Isi Dokumen')">
+          <h2 class="font-semibold">{{ t('Isi Dokumen') }}</h2>
+          <p class="mt-1 text-sm text-muted">
+            {{ t('Batas halaman di editor adalah perkiraan. Jumlah dan posisi akhir mengikuti pratinjau PDF terbaru.') }}
+          </p>
+          <NativeEditor
+            v-if="saver"
+            class="mt-4"
+            :key="document.current_version.conversion_status"
+            ref="editor"
+            :data="content"
+            :has-decorations="hasDecorations"
+            :readonly="
+              ['queued', 'processing'].includes(document.current_version.conversion_status ?? '')
+            "
+            @pending="pendingEditor = true"
+            @change="changed"
+            @invalid="editorError = $event"
+          />
+        </section>
 
         <DecorationSection
           kind="footer"
@@ -766,10 +771,12 @@ onUnmounted(() => {
           </h2>
           <button
             type="button"
-            class="min-h-11 rounded-lg border border-line px-4 text-sm"
+            class="grid size-11 shrink-0 place-items-center rounded-full text-muted transition-colors duration-150 ease-out hover:bg-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none"
+            :aria-label="t('Tutup')"
+            :title="t('Tutup')"
             @click="previewDialog?.close()"
           >
-            {{ t('Tutup') }}
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
           </button>
         </div>
         <PdfViewer

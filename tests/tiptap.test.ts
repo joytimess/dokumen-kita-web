@@ -16,6 +16,7 @@ describe('konversi editor Tiptap dan blok backend', () => {
     expect(tiptapToEditorData({ type: 'doc', content: [
       { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Judul' }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'Tebal', marks: [{ type: 'bold' }] }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Surat', marks: [{ type: 'fontFamily', attrs: { fontFamily: 'Times New Roman' } }] }] },
       { type: 'orderedList', content: [{ type: 'listItem', content: [
         { type: 'paragraph', content: [{ type: 'text', text: 'Utama' }] },
         { type: 'orderedList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Anak' }] }] }] },
@@ -35,6 +36,7 @@ describe('konversi editor Tiptap dan blok backend', () => {
     ] })).toEqual({ blocks: [
       { type: 'header', data: { text: 'Judul', level: 2 } },
       { type: 'paragraph', data: { text: '<b>Tebal</b>' } },
+      { type: 'paragraph', data: { text: '<span data-font-family="Times New Roman">Surat</span>' } },
       { type: 'list', data: { style: 'ordered', items: [{ content: 'Utama', items: ['Anak'] }] } },
       { type: 'table', data: { withHeadings: true, content: [
         [[{ type: 'paragraph', content: [{ type: 'text', text: 'Nama' }] }]],
@@ -59,6 +61,12 @@ describe('konversi editor Tiptap dan blok backend', () => {
 
   it('menyimpan editor kosong sebagai daftar blok kosong', () => {
     expect(tiptapToEditorData({ type: 'doc', content: [{ type: 'paragraph' }] })).toEqual({ blocks: [] })
+  })
+
+  it('menolak font di luar pilihan dokumen', () => {
+    expect(() => tiptapToEditorData({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Teks', marks: [{ type: 'fontFamily', attrs: { fontFamily: 'Papyrus' } }] }] },
+    ] })).toThrow('Jenis font belum dapat disimpan ke dokumen.')
   })
 
 })

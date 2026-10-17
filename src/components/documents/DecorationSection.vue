@@ -45,7 +45,7 @@ const emit = defineEmits<{
       v-else
       type="file"
       accept="image/png,image/jpeg,image/webp"
-      class="mt-4 block max-w-full text-sm"
+      class="mt-4 block w-full min-w-0 cursor-pointer rounded-xl border border-line bg-white p-1 text-sm text-muted transition-colors hover:border-primary/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 file:mr-3 file:min-h-10 file:cursor-pointer file:rounded-lg file:border-0 file:bg-sage file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/10 motion-reduce:transition-none"
       :aria-label="t('Unggah gambar :title', { title: title.toLowerCase() })"
       :disabled="!editable || busy || saving"
       @change="emit('choose', $event)"

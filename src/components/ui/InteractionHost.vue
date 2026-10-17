@@ -28,20 +28,20 @@ function onClose() {
     <div
       v-if="notice"
       :key="notice.id"
-      class="fixed top-5 right-5 z-100 flex w-[min(24rem,calc(100vw-2.5rem))] items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-lg"
+      class="fixed top-5 right-5 z-100 flex w-[min(24rem,calc(100vw-2.5rem))] items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg"
       :class="
         notice.kind === 'error'
-          ? 'border-error text-error'
+          ? 'border-error bg-error text-white'
           : notice.kind === 'success'
             ? 'border-primary bg-sage text-primary'
-            : 'border-line text-ink'
+            : 'border-line bg-white text-ink'
       "
       :role="notice.kind === 'error' ? 'alert' : 'status'"
     >
       <span class="min-w-0 flex-1 wrap-anywhere">{{ t(notice.message) }}</span>
       <button
         type="button"
-        class="text-muted"
+        :class="notice.kind === 'error' ? 'text-white' : 'text-muted'"
         :aria-label="t('Tutup notifikasi')"
         @click="notify.dismiss()"
       >×</button>
