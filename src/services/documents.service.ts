@@ -12,33 +12,37 @@ import type {
   SignaturePayload,
   RevisionResult,
   DecorationPages,
+  DocumentOcrStatus,
 } from '../types/documents'
 
-async function get<T>(path: string, params?: Record<string, string | number>) {
+async function get<T>(path: string, params?: Record<string, string | number>, signal?: AbortSignal) {
   if (authMode !== 'api')
     throw new Error('Workspace memerlukan mode API. Tidak ada data contoh yang dibuat.')
-  return (await http.get<T>(`${apiOrigin()}/api/v1${path}`, { params })).data
+  return (await http.get<T>(`${apiOrigin()}/api/v1${path}`, { params, signal })).data
 }
 async function write<T>(path: string, payload: unknown, method: 'post' | 'put' | 'patch' = 'post') {
   if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')
   return (await mutation<{ data: T }>(`/api/v1${path}`, payload, method)).data
 }
 export const documentsApi = {
-  list: (filters: { page?: number; status?: string; perPage?: number; q?: string; categoryGuid?: string; uncategorized?: boolean } = {}) =>
+  list: (filters: { page?: number; status?: string; perPage?: number; q?: string; categoryGuid?: string; uncategorized?: boolean; visibility?: 'active' | 'hidden' } = {}) =>
     get<Page<DocumentRecord>>('/documents', {
       page: filters.page ?? 1,
       per_page: filters.perPage ?? 15,
+      visibility: filters.visibility ?? 'active',
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.q ? { q: filters.q } : {}),
       ...(filters.categoryGuid ? { category_guid: filters.categoryGuid } : {}),
       ...(filters.uncategorized ? { uncategorized: 1 } : {}),
     }),
-  count: (status = '') =>
-    get<Page<DocumentRecord>>('/documents', { page: 1, per_page: 1, ...(status ? { status } : {}) }),
+  count: (status = '', visibility: 'active' | 'hidden' = 'active') =>
+    get<Page<DocumentRecord>>('/documents', { page: 1, per_page: 1, visibility, ...(status ? { status } : {}) }),
   detail: (guid: string) =>
     get<{ data: DocumentRecord }>(`/documents/${encodeURIComponent(guid)}`).then((r) => r.data),
   assignCategory: (guid: string, categoryGuid: string | null) =>
     write<DocumentRecord>(`/documents/${encodeURIComponent(guid)}/category`, { category_guid: categoryGuid }, 'patch'),
+  setVisibility: (guid: string, hidden: boolean) =>
+    write<DocumentRecord>(`/documents/${encodeURIComponent(guid)}/visibility`, { hidden }, 'patch'),
   bulkAssignCategory: (documentGuids: string[], categoryGuid: string | null) =>
     write<{ updated_count: number; category_guid: string | null }>('/documents/categories', {
       document_guids: documentGuids,
@@ -127,6 +131,15 @@ export const documentsApi = {
       'put',
     ),
   publish: (guid: string) => write<DocumentVersion>(`/versions/${guid}/publish`, {}),
+  startOcr: (guid: string, expectedHash: string) =>
+    write<DocumentOcrStatus>(`/versions/${encodeURIComponent(guid)}/ocr`, { expected_hash: expectedHash }),
+  ocr: (guid: string, expectedHash: string, query = '', signal?: AbortSignal) =>
+    get<{ data: DocumentOcrStatus }>(`/versions/${encodeURIComponent(guid)}/ocr`, {
+      expected_hash: expectedHash,
+      ...(query ? { query } : {}),
+    }, signal).then((response) => response.data),
+  retryOcr: (guid: string, expectedHash: string, pages: number[]) =>
+    write<DocumentOcrStatus>(`/versions/${encodeURIComponent(guid)}/ocr/retry`, { expected_hash: expectedHash, pages }),
   claim: (token: string) => write<Assignment>('/invitations/claim', { token }),
   resend: (guid: string) => write<Assignment>(`/assignments/${guid}/resend-invitation`, {}),
   read: (guid: string, hash: string) =>

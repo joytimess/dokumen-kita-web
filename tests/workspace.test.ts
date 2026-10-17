@@ -3,6 +3,7 @@ import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios
 import { createAutosave } from '../src/composables/useAutosave'
 import { createSignatureAction } from '../src/composables/useSignatureAction'
 import { createReadGate } from '../src/utils/readGate'
+import { findTextMatches, ocrPolygonPoints, textMatchSnippet, visibleOcrMatches } from '../src/utils/pdfSearch'
 import { afterAuthentication, workspaceDestination } from '../src/utils/authRedirect'
 import { rememberInvitation, pendingInvitation, clearInvitation } from '../src/utils/invitation'
 import {
@@ -18,7 +19,6 @@ import {
 import { documentsApi } from '../src/services/documents.service'
 import { http } from '../src/services/http'
 import { workspaceError } from '../src/services/workspace.errors'
-import { findTextMatches } from '../src/utils/pdfSearch'
 import type { Assignment, DocumentRecord, DocumentVersion } from '../src/types/documents'
 
 vi.mock('../src/services/http', async (original) => ({
@@ -157,6 +157,22 @@ describe('Gerbang baca', () => {
     ])
     expect(findTextMatches([], 'kode')).toEqual([])
   })
+  it('membuat snippet teks aman dari rentang hasil pencarian', () => {
+    const items = ['Pembuka laporan', 'kontrak untuk ditinjau']
+    const match = findTextMatches(items, 'laporan kontrak')[0]!
+    expect(textMatchSnippet(items, match)).toBe('Pembuka laporan kontrak untuk ditinjau')
+  })
+  it('mendeduplikasi teks yang sama dan mempertahankan OCR unik di halaman campuran', () => {
+    const ocr = [
+      { match_id: 'native-duplicate', page_number: 1, snippet: 'laporan', matched_text: 'laporan', polygons: [], page_dimensions: { width: 1, height: 1 }, page_rotation: 0, coordinate_space: 'normalized_top_left_page_view' as const },
+      { match_id: 'second-scan-hit', page_number: 1, snippet: 'Nomor Referensi', matched_text: 'Nomor Referensi', polygons: [], page_dimensions: { width: 1, height: 1 }, page_rotation: 0, coordinate_space: 'normalized_top_left_page_view' as const },
+      { match_id: 'scan-result', page_number: 2, snippet: 'laporan scan', matched_text: 'laporan', polygons: [], page_dimensions: { width: 1, height: 1 }, page_rotation: 0, coordinate_space: 'normalized_top_left_page_view' as const },
+    ]
+    expect(visibleOcrMatches(ocr, [{ page: 1, matchedText: ' LAPORAN ' }]).map((match) => match.match_id)).toEqual(['second-scan-hit', 'scan-result'])
+    expect(ocrPolygonPoints([[0.1, 0.2], [0.4, 0.2], [0.4, 0.25], [0.1, 0.25]])).toBe(
+      '0.1,0.2 0.4,0.2 0.4,0.25 0.1,0.25',
+    )
+  })
   it('lompat/search ke halaman terakhir tidak meloloskan halaman yang belum dikunjungi', () => {
     const model = createReadGate()
     model.reset(3)
@@ -215,6 +231,8 @@ describe('Posisi dan penerima', () => {
   it('owner tidak mendapat hak signer dari urutan atau email tanpa klaim', () => {
     const document = {
       owner_guid: 'owner',
+      hidden_at: null,
+      is_hidden: false,
       current_version: {
         assignments: [{ recipient_email: 'owner@example.com', claimed_at: null }],
       },
@@ -273,6 +291,27 @@ describe('Tanda tangan idempoten', () => {
 })
 
 describe('Adapter workspace dan kegagalan', () => {
+  it('memfilter visibilitas daftar dokumen dan mengirim mutation hide melalui PATCH', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
+    const calls: InternalAxiosRequestConfig[] = []
+    http.defaults.adapter = async (config) => {
+      calls.push(config)
+      return {
+        config,
+        status: 200,
+        data: { data: { guid: 'doc', hidden_at: null, is_hidden: false }, meta: { current_page: 1, last_page: 1, total: 0, per_page: 15 }, links: {} },
+        statusText: 'OK',
+        headers: new AxiosHeaders(),
+      }
+    }
+    await documentsApi.list({ q: 'Kontrak', visibility: 'hidden' })
+    await documentsApi.setVisibility('doc', true)
+
+    const list = calls.find((call) => call.url?.endsWith('/api/v1/documents'))
+    expect(list?.params).toMatchObject({ q: 'Kontrak', visibility: 'hidden' })
+    const update = calls.find((call) => call.url?.endsWith('/api/v1/documents/doc/visibility') && call.method === 'patch')
+    expect(JSON.parse(update!.data)).toEqual({ hidden: true })
+  })
   it('mengirim revisi editor, opsi penggantian impor, preview editor, dan alasan revisi sesuai kontrak', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
     const calls: InternalAxiosRequestConfig[] = []

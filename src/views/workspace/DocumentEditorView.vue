@@ -9,6 +9,7 @@ import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import { useAuthStore } from '../../stores/auth'
 import { useDecorations } from '../../composables/useDecorations'
 import { useSourceFile } from '../../composables/useSourceFile'
+import type { DecorationDraft, DecorationKind } from '../../utils/decorations'
 import { confirmAction, notify } from '../../services/feedback'
 import type {
   DocumentRecord,
@@ -98,6 +99,10 @@ const {
   },
   rebuildPreview,
 })
+function editDecorationDraft(kind: DecorationKind, changes: Partial<Pick<DecorationDraft, 'mode' | 'ranges'>>) {
+  Object.assign(decorations.value[kind], changes)
+  reviewed.value = false
+}
 const hasDecorations = computed(() =>
   (['letterhead', 'footer'] as const).some((kind) => {
     const draft = decorations.value[kind]
@@ -721,7 +726,7 @@ onUnmounted(() => {
           :saving="decorationSaving"
           @choose="chooseDecorationImage('letterhead', $event)"
           @remove="deleteDecorationImage('letterhead')"
-          @edit="reviewed = false"
+          @edit="editDecorationDraft('letterhead', $event)"
         />
 
         <section class="rounded-xl border border-line bg-white p-5" :aria-label="t('Isi Dokumen')">
@@ -755,7 +760,7 @@ onUnmounted(() => {
           :saving="decorationSaving"
           @choose="chooseDecorationImage('footer', $event)"
           @remove="deleteDecorationImage('footer')"
-          @edit="reviewed = false"
+          @edit="editDecorationDraft('footer', $event)"
         />
       </section>
 

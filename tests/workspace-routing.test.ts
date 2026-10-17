@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { AxiosError } from 'axios'
 import { useAuthStore } from '../src/stores/auth'
 import { authApi } from '../src/services/auth.service'
-import { clearInvitation, pendingInvitation } from '../src/utils/invitation'
+import { clearInvitation, pendingInvitation, rememberInvitation } from '../src/utils/invitation'
+import { afterAuthentication } from '../src/utils/authRedirect'
 import router from '../src/router'
 
 vi.mock('vue-router', async (original) => {
@@ -27,9 +29,41 @@ beforeEach(() => {
   setActivePinia(createPinia())
   clearInvitation()
   vi.restoreAllMocks()
-  vi.stubGlobal('document', { title: '' })
+  vi.stubGlobal('document', { title: '', documentElement: { lang: '' } })
 })
 describe('Routing workspace dan regresi autentikasi', () => {
+  it.each(['/login', '/register'])('menyimpan undangan dari email di %s sampai autentikasi selesai', async (path) => {
+    vi.spyOn(authApi, 'me').mockRejectedValue(
+      new AxiosError('unauthorized', undefined, undefined, undefined, { status: 401 } as never),
+    )
+    const token = 'b'.repeat(64)
+    await router.push(`${path}?invitation_token=${token}`)
+    expect(router.currentRoute.value.path).toBe(path)
+    expect(router.currentRoute.value.query.redirect).toBe('/invitations/claim')
+    expect(router.currentRoute.value.fullPath).not.toContain(token)
+    expect(pendingInvitation()).toBe(token)
+
+    useAuthStore().setUser({ ...user, guid: 'recipient', email: 'recipient@example.test' })
+    await router.push(afterAuthentication(true, router.currentRoute.value.query.redirect))
+    expect(router.currentRoute.value.path).toBe('/invitations/claim')
+    expect(pendingInvitation()).toBe(token)
+  })
+  it('link email tetap menuju undangan saat penerima sudah login', async () => {
+    useAuthStore().setUser(user)
+    await router.push(`/login?invitation_token=${'c'.repeat(64)}`)
+    expect(router.currentRoute.value.path).toBe('/invitations/claim')
+    expect(pendingInvitation()).toBe('c'.repeat(64))
+  })
+  it('token email yang tidak valid tidak memakai undangan sebelumnya', async () => {
+    rememberInvitation('d'.repeat(64))
+    vi.spyOn(authApi, 'me').mockRejectedValue(
+      new AxiosError('unauthorized', undefined, undefined, undefined, { status: 401 } as never),
+    )
+    await router.push('/login?invitation_token=invalid')
+    expect(pendingInvitation()).toBe('')
+    expect(router.currentRoute.value.query.invitation_token).toBeUndefined()
+    expect(router.currentRoute.value.query.redirect).toBe('/invitations/claim?error=invalid')
+  })
   it('landing tetap route publik dan recovery/verifikasi tidak tertimpa shell', () => {
     expect(router.resolve('/').meta.workspace).toBeUndefined()
     for (const path of ['/forgot-password', '/email/verify', '/email/verified'])

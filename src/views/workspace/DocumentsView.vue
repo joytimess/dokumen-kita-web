@@ -5,7 +5,7 @@ import axios from 'axios'
 import { documentsApi } from '../../services/documents.service'
 import { categoriesApi } from '../../services/categories.service'
 import { workspaceError } from '../../services/workspace.errors'
-import { notify } from '../../services/feedback'
+import { confirmAction, notify } from '../../services/feedback'
 import { useAuthStore } from '../../stores/auth'
 import { dateLabel } from '../../utils/documents'
 import { categoryColorClass } from '../../utils/category'
@@ -22,6 +22,7 @@ const auth = useAuthStore()
 const summary = computed(() => route.path === '/dashboard')
 const page = ref<Page<DocumentRecord>>()
 const status = ref('')
+const visibility = ref<'active' | 'hidden'>('active')
 const perPage = ref(10)
 const query = ref('')
 const categoryFilter = ref('')
@@ -37,6 +38,7 @@ const counts = ref<Record<string, number | undefined>>({})
 const countsLoading = ref(false)
 const countError = ref(false)
 const downloading = ref('')
+const visibilityBusy = ref('')
 const selectedGuids = ref<string[]>([])
 const bulkCategory = ref('')
 const bulkBusy = ref(false)
@@ -70,6 +72,25 @@ const showingEnd = computed(() => {
   return meta ? Math.min(meta.current_page * meta.per_page, meta.total) : 0
 })
 const numberLabel = formatNumber
+const visibilityOptions = computed(() => [
+  { value: 'active', label: t('Dokumen aktif') },
+  { value: 'hidden', label: t('Disembunyikan') },
+])
+const hasSearchFilters = computed(() => Boolean(query.value || status.value || categoryFilter.value))
+const emptyTitle = computed(() =>
+  visibility.value === 'hidden' && !hasSearchFilters.value
+    ? t('Belum ada dokumen tersembunyi.')
+    : hasSearchFilters.value
+      ? t('Tidak ada dokumen yang sesuai.')
+      : t('Belum ada dokumen.'),
+)
+const emptyDescription = computed(() =>
+  visibility.value === 'hidden' && !hasSearchFilters.value
+    ? t('Dokumen yang Anda sembunyikan akan muncul di sini.')
+    : hasSearchFilters.value
+      ? t('Coba ubah atau hapus filter yang dipilih.')
+      : t('Draft yang Anda buat akan tampil di sini.'),
+)
 const tabs = computed(() => [
   { id: '', label: t('Semua'), total: counts.value.all },
   { id: 'draft', label: t('Draft'), total: counts.value.draft },
@@ -93,6 +114,7 @@ async function loadList(number = 1) {
   const identity = auth.user?.guid
   const queryText = queryValue('q')
   const statusFilter = queryValue('status')
+  const visibilityFilter = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
   const categoryGuid = queryValue('category_guid')
   const uncategorized = queryValue('uncategorized') === '1'
   const perPageFilter = Number(queryValue('per_page')) || 10
@@ -104,12 +126,18 @@ async function loadList(number = 1) {
     const result = await documentsApi.list({
       page: number,
       status: statusFilter,
+      visibility: visibilityFilter,
       perPage: perPageFilter,
       q: queryText,
       categoryGuid,
       uncategorized,
     })
     if (!active || request !== listRequest || auth.user?.guid !== identity) return
+    const lastPage = Math.max(1, result.meta.last_page)
+    if (number > lastPage) {
+      await router.replace({ query: { ...route.query, page: lastPage > 1 ? String(lastPage) : undefined } })
+      return
+    }
     page.value = result
     pageMatchesFilters.value = true
   } catch (cause) {
@@ -136,15 +164,15 @@ async function loadCategories() {
 }
 
 async function loadCounts() {
-  if (countsLoading.value) return
   const request = ++countRequest
   const identity = auth.user?.guid
+  const visibilityFilter = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
   countsLoading.value = true
   countError.value = false
   counts.value = {}
   await Promise.all(['', ...statuses].map(async (value) => {
     try {
-      const result = await documentsApi.count(value)
+      const result = await documentsApi.count(value, visibilityFilter)
       if (!active || request !== countRequest || auth.user?.guid !== identity) return
       counts.value[value || 'all'] = result.meta.total
     } catch (cause) {
@@ -170,6 +198,7 @@ function filtersChanged() {
     ...route.query,
     q: query.value.trim() || undefined,
     status: status.value || undefined,
+    visibility: visibility.value === 'hidden' ? 'hidden' : undefined,
     category_guid: categoryGuid || undefined,
     uncategorized: categoryFilter.value === '__uncategorized' ? '1' : undefined,
     per_page: perPage.value === 10 ? undefined : String(perPage.value),
@@ -185,6 +214,38 @@ function chooseStatus(value: string) {
 
 function toggleActions(guid: string) {
   openActions.value = openActions.value === guid ? '' : guid
+}
+
+async function changeVisibility(document: DocumentRecord) {
+  if (visibilityBusy.value) return
+  const identity = auth.user?.guid
+  openActions.value = ''
+  if (!document.is_hidden) {
+    const confirmed = await confirmAction(
+      t('Dokumen disembunyikan dari daftar Anda. Penerima tetap dapat mengaksesnya.'),
+      { title: t('Sembunyikan dokumen?'), action: t('Sembunyikan') },
+    )
+    if (!confirmed || !active || auth.user?.guid !== identity) return
+  }
+
+  visibilityBusy.value = document.guid
+  actionError.value = ''
+  try {
+    await documentsApi.setVisibility(document.guid, !document.is_hidden)
+    if (!active || auth.user?.guid !== identity) return
+    notify.success(t(document.is_hidden ? 'Dokumen dikembalikan ke daftar aktif.' : 'Dokumen disembunyikan dari daftar aktif.'))
+    await loadList(Math.max(1, Number(queryValue('page')) || 1))
+    if (summary.value) await loadCounts()
+  } catch (cause) {
+    if (!active || auth.user?.guid !== identity) return
+    const feedback = workspaceError(cause)
+    actionError.value = t(feedback.message)
+    if (feedback.status === 401) auth.user = null
+    if ([403, 404].includes(feedback.status ?? 0))
+      await loadList(Math.max(1, Number(queryValue('page')) || 1))
+  } finally {
+    if (active) visibilityBusy.value = ''
+  }
 }
 
 function pageTo(number: number) {
@@ -253,6 +314,7 @@ watch(() => route.fullPath, () => {
   clearTimeout(queryTimer)
   query.value = queryValue('q')
   status.value = queryValue('status')
+  visibility.value = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
   categoryFilter.value = queryValue('uncategorized') === '1' ? '__uncategorized' : queryValue('category_guid')
   perPage.value = [10, 25, 50].includes(Number(queryValue('per_page'))) ? Number(queryValue('per_page')) : 10
   selectedGuids.value = []
@@ -260,13 +322,12 @@ watch(() => route.fullPath, () => {
   const number = Math.max(1, Number(queryValue('page')) || 1)
   void loadList(number)
 }, { immediate: true })
-watch(() => route.path, (path) => {
+watch([() => route.path, () => queryValue('visibility')], ([path]) => {
   if (path === '/dashboard') void loadCounts()
-})
+}, { immediate: true })
 
 onMounted(() => {
   void loadCategories()
-  if (summary.value) void loadCounts()
 })
 onUnmounted(() => {
   active = false
@@ -323,7 +384,7 @@ onUnmounted(() => {
 
   <section class="rounded-2xl border border-line bg-white p-4 shadow-[0_2px_10px_rgba(20,28,48,0.035)] sm:p-6">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
-      <h2 class="text-xl font-semibold">{{ summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
+      <h2 class="text-xl font-semibold">{{ visibility === 'hidden' ? t('Dokumen disembunyikan') : summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
       <div v-if="summary" role="group" :aria-label="t('Filter dokumen')" class="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-soft p-1">
         <button
           v-for="tab in tabs"
@@ -337,13 +398,17 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:items-end">
+    <div class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 sm:items-end">
       <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
         {{ t('Cari judul dokumen') }}
         <span class="flex min-w-0 gap-2">
           <input v-model="query" type="search" maxlength="200" class="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-white px-3 text-sm text-ink" :placeholder="t('Cari judul dokumen')" @input="queryChanged" />
           <button v-if="query" type="button" class="min-h-11 shrink-0 rounded-xl border border-line px-3 text-sm text-primary" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
         </span>
+      </label>
+      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
+        {{ t('Visibilitas') }}
+        <SelectControl v-model="visibility" :ariaLabel="t('Visibilitas')" class="min-h-11 w-full text-sm" :options="visibilityOptions" @change="filtersChanged" />
       </label>
       <div v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
         {{ t('Status') }}
@@ -378,7 +443,7 @@ onUnmounted(() => {
         />
       </div>
     </div>
-    <p class="mb-4 text-xs text-muted">{{ t('Pencarian judul berlaku untuk seluruh dokumen milik Anda. Urutan judul hanya berlaku pada halaman yang sedang dibuka.') }}</p>
+    <p class="mb-4 text-xs text-muted">{{ t('Pencarian judul mencakup semua dokumen pada visibilitas yang dipilih. Urutan judul hanya berlaku pada halaman yang sedang dibuka.') }}</p>
     <div v-if="categoryError" class="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
       <span>{{ t('Kategori belum dapat dimuat.') }}</span>
       <button type="button" class="min-h-10 font-semibold text-primary underline" @click="loadCategories">{{ t('Coba lagi') }}</button>
@@ -399,8 +464,8 @@ onUnmounted(() => {
     <p v-if="listError && page && !pageMatchesFilters" class="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-900">{{ t('Pencarian atau filter baru gagal dimuat. Data sebelumnya tetap disimpan; belum ada hasil baru untuk ditampilkan.') }}</p>
     <p v-if="listLoading" role="status" class="py-10 text-center text-sm text-muted">{{ t('Memuat dokumen…') }}</p>
     <div v-else-if="page && pageMatchesFilters && !page.meta.total" class="rounded-xl border border-dashed border-line bg-soft/60 px-6 py-12 text-center">
-      <h3 class="text-lg font-semibold">{{ query || status || categoryFilter ? t('Tidak ada dokumen yang sesuai.') : t('Belum ada dokumen.') }}</h3>
-      <p class="mt-2 text-sm text-muted">{{ query || status || categoryFilter ? t('Coba ubah atau hapus filter yang dipilih.') : t('Draft yang Anda buat akan tampil di sini.') }}</p>
+      <h3 class="text-lg font-semibold">{{ emptyTitle }}</h3>
+      <p class="mt-2 text-sm text-muted">{{ emptyDescription }}</p>
     </div>
     <div v-else-if="page && pageMatchesFilters && !visible.length" class="rounded-xl border border-dashed border-line px-6 py-10 text-center text-sm text-muted">
       {{ t('Tidak ada judul yang cocok pada halaman ini.') }}
@@ -428,6 +493,9 @@ onUnmounted(() => {
                 <RouterLink v-if="document.owner_guid === auth.user?.guid && document.current_version.status === 'draft'" :to="`/documents/${document.guid}/edit`" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Edit') }}</RouterLink>
                 <button v-if="document.current_version.status === 'completed'" type="button" class="block min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-soft disabled:opacity-50" :disabled="!!downloading" @click="toggleActions(document.guid); download(document)">
                   {{ t('Unduh PDF') }}
+                </button>
+                <button v-if="document.owner_guid === auth.user?.guid" type="button" class="block min-h-10 w-full rounded-lg px-3 py-2 text-left text-sm text-ink hover:bg-soft disabled:opacity-50" :disabled="visibilityBusy === document.guid" @click="changeVisibility(document)">
+                  {{ t(document.is_hidden ? 'Kembalikan ke daftar aktif' : 'Sembunyikan') }}
                 </button>
                 <RouterLink :to="{ path: `/documents/${document.guid}`, query: route.query }" class="block min-h-10 rounded-lg px-3 py-2 text-sm text-ink hover:bg-soft">{{ t('Lihat detail') }}</RouterLink>
               </div>

@@ -123,13 +123,24 @@ const router = createRouter({
   },
 })
 router.beforeEach(async (to) => {
-  if (to.meta.invitation && to.query.token) {
-    const valid = rememberInvitation(to.query.token)
+  const common = ['/login', '/register'].includes(to.path)
+  const token = to.meta.invitation ? to.query.token : common ? to.query.invitation_token : undefined
+  if (token !== undefined) {
+    const valid = rememberInvitation(token)
     if (!valid) clearInvitation()
+    if (common)
+      return {
+        path: to.path,
+        query: {
+          ...to.query,
+          invitation_token: undefined,
+          redirect: valid ? '/invitations/claim' : '/invitations/claim?error=invalid',
+        },
+        replace: true,
+      }
     return { path: '/invitations/claim', query: valid ? {} : { error: 'invalid' }, replace: true }
   }
   if (authMode !== 'api') return
-  const common = ['/login', '/register'].includes(to.path)
   if (!to.meta.workspace && !common) return
   const auth = useAuthStore()
   await auth.restore()

@@ -16,8 +16,16 @@ defineProps<{
 const emit = defineEmits<{
   choose: [event: Event]
   remove: []
-  edit: []
+  edit: [changes: Partial<Pick<DecorationDraft, 'mode' | 'ranges'>>]
 }>()
+
+function changeMode(value: string | number) {
+  emit('edit', { mode: value === 'range' ? 'range' : 'all' })
+}
+
+function changeRanges(event: Event) {
+  emit('edit', { ranges: (event.target as HTMLInputElement).value })
+}
 </script>
 
 <template>
@@ -59,25 +67,25 @@ const emit = defineEmits<{
       <div>
         {{ t('Cakupan halaman') }}
         <SelectControl
-          v-model="draft.mode"
-          :aria-label="t('Cakupan halaman')"
+          :model-value="draft.mode"
+          :ariaLabel="t('Cakupan halaman')"
           class="ml-2 min-h-11"
           :options="[
             { value: 'all', label: t('Semua halaman') },
             { value: 'range', label: t('Halaman tertentu') },
           ]"
           :disabled="saving"
-          @change="emit('edit')"
+          @change="changeMode"
         />
       </div>
       <label v-if="draft.mode === 'range'" class="grid gap-1"
         >{{ t('Nomor/rentang halaman') }}
         <input
-          v-model="draft.ranges"
+          :value="draft.ranges"
           class="min-h-11 rounded border border-line px-3"
           placeholder="1, 3-5"
           :disabled="saving"
-          @input="emit('edit')"
+          @input="changeRanges"
         />
       </label>
     </div>

@@ -58,12 +58,36 @@ export interface DocumentVersion {
   updated_at: string
   published_at: string | null
 }
+export type DocumentOcrPoint = [number, number]
+export interface DocumentOcrMatch {
+  match_id: string
+  page_number: number
+  snippet: string
+  matched_text: string
+  polygons: DocumentOcrPoint[][]
+  page_dimensions: { width: number | null; height: number | null }
+  page_rotation: number | null
+}
+export interface DocumentOcrStatus {
+  document_guid: string
+  version_guid: string
+  pdf_hash: string
+  coordinate_space: 'normalized_top_left_page_view'
+  processing_status: 'unavailable' | 'queued' | 'processing' | 'completed' | 'partial' | 'failed'
+  page_counts: { total: number; completed: number; failed: number }
+  ocr_page_counts: { total: number; recognized: number }
+  failed_pages: { page_number: number; error_code: string; retryable: boolean }[]
+  matches: DocumentOcrMatch[]
+  error_code?: string
+}
 export interface DocumentRecord {
   guid: string
   public_reference: string
   title: string
   status: string
   owner_guid: string
+  hidden_at: string | null
+  is_hidden: boolean
   category_guid?: string | null
   category?: DocumentCategory | null
   current_version: DocumentVersion

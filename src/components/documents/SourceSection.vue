@@ -20,6 +20,8 @@ const emit = defineEmits<{
 }>()
 
 function warningText(warning: string) {
+  if (warning.includes('OCR_PARTIAL')) return t('OCR belum dapat membaca sebagian halaman; periksa hasilnya.')
+  if (warning.includes('OCR')) return t('Teks hasil OCR perlu diperiksa dan dikoreksi sebelum digunakan.')
   if (warning.includes('SKIPPED') || warning.includes('EXCEEDED'))
     return t('Sebagian gambar dilewati karena batas editor.')
   if (warning.includes('TABLE') || warning.includes('GRAPHICS'))

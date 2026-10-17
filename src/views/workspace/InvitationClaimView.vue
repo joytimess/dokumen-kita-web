@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { documentsApi } from '../../services/documents.service'
 import { pendingInvitation, clearInvitation } from '../../utils/invitation'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
-import { confirmAction, notify } from '../../services/feedback'
+import { notify } from '../../services/feedback'
 import type { Assignment } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
@@ -15,10 +15,7 @@ const token = ref(pendingInvitation()),
 const router = useRouter()
 const { busy, error, run } = useWorkspaceRequest()
 async function claim() {
-  if (!token.value || assignment.value) return
-  if (!(await confirmAction(t('Klaim undangan ini dengan akun yang sedang masuk?'), {
-    title: t('Klaim undangan'), action: t('Klaim'),
-  }))) return
+  if (!token.value || assignment.value || busy.value) return
   const result = await run(() => documentsApi.claim(token.value))
   if (result) {
     assignment.value = result
@@ -28,6 +25,7 @@ async function claim() {
     if (result.document_guid) await router.replace(`/documents/${result.document_guid}/versions/${result.version_guid}/view`)
   }
 }
+onMounted(() => void claim())
 </script>
 <template>
   <div class="mb-7">

@@ -189,7 +189,7 @@ async function removeArea(index: number) {
         {{ t('Penerima') }}
         <SelectControl
           v-model="selected"
-          :aria-label="t('Penerima')"
+          :ariaLabel="t('Penerima')"
           class="w-full min-h-11"
           :options="assignments.map((a) => ({
             value: a.guid,

@@ -167,8 +167,8 @@ function splitTableRect(tr: Editor['state']['tr'], tablePosition: number, top: n
   if (!table) return false
   const map = TableMap.get(table)
   if (top < 0 || left < 0 || top + rows > map.height || left + columns > map.width) return false
-  const anchor = tablePosition + 1 + map.map[top * map.width + left]
-  const head = tablePosition + 1 + map.map[(top + rows - 1) * map.width + left + columns - 1]
+  const anchor = tablePosition + 1 + map.map[top * map.width + left]!
+  const head = tablePosition + 1 + map.map[(top + rows - 1) * map.width + left + columns - 1]!
   tr.setSelection(CellSelection.create(tr.doc, anchor, head))
   return true
 }
