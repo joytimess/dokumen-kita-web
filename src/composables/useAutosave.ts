@@ -10,23 +10,23 @@ export function createAutosave<T>(
     onError?: (error: unknown) => boolean | void
   } = {},
 ) {
-  const current = ref(JSON.stringify(initial))
-  const baseline = ref(current.value)
+  const currentSnapshot = ref(JSON.stringify(initial))
+  const savedSnapshot = ref(currentSnapshot.value)
   const saving = ref(false)
   const error = ref('')
   const savedAt = ref<number | null>(null)
-  const dirty = computed(() => current.value !== baseline.value)
+  const dirty = computed(() => currentSnapshot.value !== savedSnapshot.value)
   let timer: ReturnType<typeof setTimeout> | undefined
-  let request: Promise<boolean> | undefined
+  let saveRequest: Promise<boolean> | undefined
   let disposed = false
   let halted = false
-  let revision = 0
+  let changeRevision = 0
   function change(value: T) {
     if (disposed || halted) return
     const next = JSON.stringify(value)
-    if (next === current.value) return
-    revision++
-    current.value = next
+    if (next === currentSnapshot.value) return
+    changeRevision++
+    currentSnapshot.value = next
     error.value = ''
     clearTimeout(timer)
     if (dirty.value)
@@ -37,40 +37,42 @@ export function createAutosave<T>(
   function flush(): Promise<boolean> {
     clearTimeout(timer)
     if (disposed || halted) return Promise.resolve(!dirty.value)
-    if (request) return request
+    if (saveRequest) return saveRequest
     if (!dirty.value) return Promise.resolve(true)
-    request = (async () => {
-      saving.value = true
-      try {
-        while (dirty.value && !disposed && !halted) {
-          const snapshot = current.value
-          const sentRevision = revision
-          const normalized = await save(JSON.parse(snapshot) as T)
-          if (disposed) return false
-          baseline.value = snapshot
-          const latest = sentRevision === revision
-          if (normalized && latest) {
-            current.value = JSON.stringify(normalized)
-            baseline.value = current.value
-          }
-          savedAt.value = Date.now()
-          error.value = ''
-          options.onSaved?.(normalized ?? (JSON.parse(snapshot) as T), latest)
+    saveRequest = savePendingChanges()
+    return saveRequest
+  }
+
+  async function savePendingChanges(): Promise<boolean> {
+    saving.value = true
+    try {
+      while (dirty.value && !disposed && !halted) {
+        const snapshot = currentSnapshot.value
+        const revisionAtSave = changeRevision
+        const normalized = await save(JSON.parse(snapshot) as T)
+        if (disposed) return false
+        savedSnapshot.value = snapshot
+        const latest = revisionAtSave === changeRevision
+        if (normalized && latest) {
+          currentSnapshot.value = JSON.stringify(normalized)
+          savedSnapshot.value = currentSnapshot.value
         }
-        return !dirty.value
-      } catch (cause) {
-        if (!disposed) {
-          halted = options.onError?.(cause) === true
-          error.value = 'Gagal menyimpan. Perubahan tetap ada di halaman ini.'
-          clearTimeout(timer)
-        }
-        return false
-      } finally {
-        saving.value = false
-        request = undefined
+        savedAt.value = Date.now()
+        error.value = ''
+        options.onSaved?.(normalized ?? (JSON.parse(snapshot) as T), latest)
       }
-    })()
-    return request
+      return !dirty.value
+    } catch (cause) {
+      if (!disposed) {
+        halted = options.onError?.(cause) === true
+        error.value = 'Gagal menyimpan. Perubahan tetap ada di halaman ini.'
+        clearTimeout(timer)
+      }
+      return false
+    } finally {
+      saving.value = false
+      saveRequest = undefined
+    }
   }
   return {
     dirty,
