@@ -20,6 +20,10 @@ const emit = defineEmits<{
 }>()
 
 function warningText(warning: string) {
+  if (warning === 'PDF_OCR_SKIPPED_LIMIT')
+    return t('Diimpor dari teks digital saja karena PDF melewati batas OCR 1 MB atau 3 halaman. Teks scan belum dikonversi.')
+  if (warning === 'PDF_OCR_SKIPPED_QUOTA')
+    return t('Diimpor dari teks digital saja karena kuota OCR tidak tersedia. Teks scan belum dikonversi.')
   if (warning.includes('OCR_PARTIAL')) return t('OCR belum dapat membaca sebagian halaman; periksa hasilnya.')
   if (warning.includes('OCR')) return t('Teks hasil OCR perlu diperiksa dan dikoreksi sebelum digunakan.')
   if (warning.includes('SKIPPED') || warning.includes('EXCEEDED'))
@@ -28,6 +32,10 @@ function warningText(warning: string) {
     return t('Tabel dan grafik perlu diperiksa.')
   if (warning.includes('IMAGE')) return t('Posisi gambar perlu diperiksa.')
   return t('Tata letak mungkin berubah; periksa hasil edit.')
+}
+
+function isPartialImport(warnings?: string[] | null) {
+  return warnings?.some((warning) => ['PDF_OCR_SKIPPED_LIMIT', 'PDF_OCR_SKIPPED_QUOTA'].includes(warning)) ?? false
 }
 </script>
 
@@ -49,7 +57,7 @@ function warningText(warning: string) {
       {{ t(conversionFailure(version.conversion_error_code)) }}
     </p>
     <p v-if="version.conversion_status === 'ready'" class="mb-3 text-sm">
-      {{ t('Konversi siap · :count halaman. Periksa hasil editor.', { count: formatNumber(version.conversion_page_count ?? 0) }) }}
+      {{ t(isPartialImport(version.conversion_warnings) ? 'Hasil impor sebagian · :count halaman. Periksa teks digital yang tersedia.' : 'Konversi siap · :count halaman. Periksa hasil editor.', { count: formatNumber(version.conversion_page_count ?? 0) }) }}
     </p>
     <p
       v-for="warning in version.conversion_warnings"
@@ -73,6 +81,9 @@ function warningText(warning: string) {
         @change="emit('upload', $event)"
     /></label>
     <p class="mt-3 text-xs text-muted">{{ t('Maksimal 20.480 KB sesuai konfigurasi backend saat ini.') }}</p>
+    <p class="mt-2 text-xs text-muted">
+      {{ t('Impor mengikuti batas upload. OCR PDF scan gratis maksimal 1 MB dan 3 halaman; jika batas tercapai, hanya teks digital yang dapat diimpor.') }}
+    </p>
     <p v-if="importUncertain" class="mt-3 text-xs text-error">
       {{ t('Hasil upload belum pasti. Detail sudah diperiksa ulang; tinjau metadata dan muat ulang sebelum mengunggah lagi.') }}
     </p>

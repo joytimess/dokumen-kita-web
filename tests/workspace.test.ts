@@ -3,7 +3,7 @@ import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios
 import { createAutosave } from '../src/composables/useAutosave'
 import { createSignatureAction } from '../src/composables/useSignatureAction'
 import { createReadGate } from '../src/utils/readGate'
-import { findTextMatches, ocrPolygonPoints, textMatchSnippet, visibleOcrMatches } from '../src/utils/pdfSearch'
+import { findTextMatches, textMatchSnippet, visibleOcrMatches } from '../src/utils/pdfSearch'
 import { afterAuthentication, workspaceDestination } from '../src/utils/authRedirect'
 import { rememberInvitation, pendingInvitation, clearInvitation } from '../src/utils/invitation'
 import {
@@ -64,6 +64,9 @@ describe('Autosave serial', () => {
   })
   it('menjelaskan PDF scan tanpa menampilkan kode atau detail backend', () => {
     expect(conversionFailure('PDF_TEXT_LAYER_MISSING')).toContain('OCR')
+    expect(conversionFailure('OCR_PROVIDER_NOT_CONFIGURED')).toContain('OCR')
+    expect(conversionFailure('OCR_LIMIT_EXCEEDED')).toContain('1 MB dan 3 halaman')
+    expect(conversionFailure('OCR_QUOTA_EXHAUSTED')).toContain('Kuota OCR')
     expect(conversionFailure('UNKNOWN_INTERNAL')).not.toContain('UNKNOWN_INTERNAL')
   })
   it('tidak save baseline dan menggabungkan perubahan selama 1000 ms', async () => {
@@ -169,9 +172,6 @@ describe('Gerbang baca', () => {
       { match_id: 'scan-result', page_number: 2, snippet: 'laporan scan', matched_text: 'laporan', polygons: [], page_dimensions: { width: 1, height: 1 }, page_rotation: 0, coordinate_space: 'normalized_top_left_page_view' as const },
     ]
     expect(visibleOcrMatches(ocr, [{ page: 1, matchedText: ' LAPORAN ' }]).map((match) => match.match_id)).toEqual(['second-scan-hit', 'scan-result'])
-    expect(ocrPolygonPoints([[0.1, 0.2], [0.4, 0.2], [0.4, 0.25], [0.1, 0.25]])).toBe(
-      '0.1,0.2 0.4,0.2 0.4,0.25 0.1,0.25',
-    )
   })
   it('lompat/search ke halaman terakhir tidak meloloskan halaman yang belum dikunjungi', () => {
     const model = createReadGate()
@@ -400,6 +400,12 @@ describe('Adapter workspace dan kegagalan', () => {
     expect(workspaceError(failure(403)).message).not.toContain('Verifikasi email')
     expect(workspaceError(failure(403, 'EMAIL_NOT_VERIFIED')).message).toContain('Verifikasi email')
     expect(workspaceError(failure(500)).message).not.toContain('private details')
+    expect(workspaceError(failure(503, 'OCR_PROVIDER_NOT_CONFIGURED')).message).toContain('OCR')
+    expect(workspaceError(failure(422, 'OCR_LIMIT_EXCEEDED')).message).toContain('1 MB dan 3 halaman')
+    expect(workspaceError(failure(503, 'OCR_QUOTA_EXHAUSTED')).message).toContain('Kuota OCR sementara')
+    expect(workspaceError(failure(503, 'OCR_SERVICE_UNAVAILABLE')).message).toContain('tidak tersedia')
+    expect(workspaceError(failure(409, 'PDF_VERSION_CHANGED')).message).toContain('Versi PDF berubah')
+    expect(workspaceError(failure(409, 'OCR_PAGES_NOT_RETRYABLE')).message).toContain('tidak dapat dicoba ulang')
     const feedback = workspaceError(failure(429, '', { 'retry-after': '120' }))
     expect(feedback.retryAt).toBeGreaterThan(Date.now() + 119000)
     expect(workspaceError(failure(409, 'IDEMPOTENCY_CONFLICT')).message).toContain('sebelumnya')

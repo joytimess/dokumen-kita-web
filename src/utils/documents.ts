@@ -90,12 +90,12 @@ export function remoteVersionConflict(
 }
 export function conversionFailure(code?: string | null) {
   switch (code) {
-    case 'PDF_TEXT_LAYER_MISSING': return 'OCR belum dikonfigurasi untuk mengubah PDF scan menjadi teks editor.'
-    case 'OCR_LIMIT_EXCEEDED': return 'PDF scan melewati batas ukuran atau halaman OCR.'
-    case 'OCR_TEXT_UNRECOGNIZED': return 'Teks pada PDF scan tidak berhasil dikenali.'
+    case 'PDF_TEXT_LAYER_MISSING':
     case 'OCR_PROVIDER_NOT_CONFIGURED': return 'OCR belum dikonfigurasi pada server.'
+    case 'OCR_LIMIT_EXCEEDED': return 'PDF melewati batas OCR gratis: maksimal 1 MB dan 3 halaman. Impor biasa tidak menemukan teks yang dapat diedit.'
+    case 'OCR_TEXT_UNRECOGNIZED': return 'Teks pada PDF scan tidak berhasil dikenali.'
     case 'OCR_SERVICE_UNAVAILABLE': return 'Layanan OCR sedang tidak tersedia. Coba konversi lagi nanti.'
-    case 'OCR_QUOTA_EXHAUSTED': return 'Kuota OCR habis. Coba lagi setelah kuota tersedia.'
+    case 'OCR_QUOTA_EXHAUSTED': return 'Kuota OCR sementara tidak tersedia. Impor biasa tidak menemukan teks yang dapat diedit; coba lagi setelah kuota tersedia.'
     case 'DOCUMENT_PAGE_LIMIT': return 'Jumlah halaman berkas melebihi batas server.'
     case 'DRAFT_CHANGED': return 'Draft berubah selama konversi. Periksa isi editor sebelum mencoba lagi.'
     case 'PDF_CONVERSION_FAILED': return 'PDF belum dapat dikonversi. Periksa berkas dan coba lagi.'

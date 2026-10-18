@@ -12,7 +12,7 @@ import 'pdfjs-dist/web/pdf_viewer.css'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { createReadGate } from '../../utils/readGate'
-import { findTextMatches, ocrPolygonPoints, textMatchSnippet, visibleOcrMatches, type TextMatch } from '../../utils/pdfSearch'
+import { findTextMatches, textMatchSnippet, visibleOcrMatches, type TextMatch } from '../../utils/pdfSearch'
 import type { DocumentOcrMatch, DocumentOcrStatus, Placeholder } from '../../types/documents'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import SelectControl from '../ui/SelectControl.vue'
@@ -83,21 +83,12 @@ const results = computed(() => [
   ...hits.value.map((hit, index) => ({ id: `native:${hit.page}:${hit.offset}:${index}`, page: hit.page, snippet: hit.snippet })),
   ...visibleOcrHits.value.map((hit) => ({ id: `ocr:${hit.match_id}`, page: hit.page_number, snippet: hit.snippet })),
 ])
-const ocrPolygons = computed(() => ocrHits.value.flatMap((hit) =>
-  hit.page_number === page.value
-    ? hit.polygons.map((polygon, polygonIndex) => ({
-        id: `${hit.match_id}:${polygonIndex}`,
-        points: ocrPolygonPoints(polygon),
-        active: results.value[activeHit.value]?.id === `ocr:${hit.match_id}`,
-      }))
-    : [],
-))
 const ocrStatusMessage = computed(() => {
   const status = ocrStatus.value
   if (!status) return ''
   const failure = status.failed_pages[0]?.error_code
   const failureText: Record<string, string> = {
-    OCR_LIMIT_EXCEEDED: 'Dokumen melewati batas halaman atau ukuran OCR.',
+    OCR_LIMIT_EXCEEDED: 'PDF melewati batas OCR 1 MB atau 3 halaman; pencarian teks native tetap tersedia.',
     OCR_QUOTA_EXHAUSTED: 'Kuota OCR habis; coba lagi setelah kuota tersedia.',
     OCR_SERVICE_UNAVAILABLE: 'Layanan OCR sedang bermasalah; halaman gagal dapat dicoba ulang.',
     OCR_TEXT_UNRECOGNIZED: 'Sebagian teks tidak terbaca; gunakan scan yang lebih jelas.',
@@ -151,9 +142,9 @@ function scrollToHit() {
   if (hit?.page === page.value)
     textTask?.textDivs[hit.item]?.scrollIntoView({ block: 'center', behavior: 'instant' })
 }
-function scheduleOcrPoll(serial: number) {
+function scheduleOcrPoll(serial: number, delay = 2000) {
   clearTimeout(ocrTimer)
-  ocrTimer = setTimeout(() => void pollOcr(serial), 2000)
+  ocrTimer = setTimeout(() => void pollOcr(serial), delay)
 }
 async function pollOcr(serial: number) {
   if (serial !== generation || disposed || !pdfHash) return
@@ -171,8 +162,12 @@ async function pollOcr(serial: number) {
     if (status.processing_status === 'queued' || status.processing_status === 'processing')
       scheduleOcrPoll(serial)
   } catch (cause) {
-    if (serial === generation && !disposed && !controller.signal.aborted)
-      ocrError.value = workspaceError(cause).message
+    if (serial === generation && !disposed && !controller.signal.aborted) {
+      const failure = workspaceError(cause)
+      ocrError.value = failure.message
+      if (failure.ambiguous && ['queued', 'processing'].includes(ocrStatus.value?.processing_status ?? ''))
+        scheduleOcrPoll(serial, 5000)
+    }
   }
 }
 async function beginOcr(hash: string, serial: number) {
@@ -545,6 +540,7 @@ onUnmounted(() => {
         id="pdf-search"
         v-model="query"
         type="search"
+        maxlength="120"
         class="min-h-11 min-w-0 flex-1 rounded border border-line px-3"
         :placeholder="t('Cari teks dalam PDF')"
         @input="scheduleSearch"
@@ -572,6 +568,9 @@ onUnmounted(() => {
       }}</span>
     </form>
     <p v-if="ocrStatus" class="mb-2 text-xs text-muted" role="status">{{ ocrStatusMessage }}</p>
+    <p v-if="visibleOcrHits.length" class="mb-2 text-xs text-muted" role="status">
+      {{ t('Hasil OCR hanya tersedia sebagai teks; posisi kata tidak tersedia.') }}
+    </p>
     <FeedbackMessage :message="t(ocrError)" error />
     <button
       v-if="ocrStatus?.failed_pages.some((item) => item.retryable)"
@@ -632,21 +631,6 @@ onUnmounted(() => {
           class="textLayer"
           :class="editable || rendering || error ? 'pointer-events-none invisible' : ''"
         ></div>
-        <svg
-          v-if="ocrPolygons.length"
-          class="pointer-events-none absolute inset-0 h-full w-full"
-          viewBox="0 0 1 1"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <polygon
-            v-for="polygon in ocrPolygons"
-            :key="polygon.id"
-            :points="polygon.points"
-            :class="polygon.active ? 'fill-orange-400/40 stroke-blue-800' : 'fill-yellow-300/30 stroke-yellow-500/80'"
-            stroke-width="0.003"
-          />
-        </svg>
         <div
           v-for="area in pageOverlays"
           :key="area.index"

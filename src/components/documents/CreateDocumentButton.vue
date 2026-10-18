@@ -101,7 +101,7 @@ async function createDraft() {
         />
         <div class="mb-[18px] grid gap-[7px] text-xs font-semibold">
           {{ t('Kategori (opsional)') }}
-          <SelectControl v-model="categoryGuid" :ariaLabel="t('Kategori (opsional)')" class="min-h-11 w-full text-sm font-normal" :options="categoryOptions" :disabled="busy || attempted || !!categoryError" />
+          <SelectControl v-model="categoryGuid" floating :ariaLabel="t('Kategori (opsional)')" class="min-h-11 w-full text-sm font-normal" :options="categoryOptions" :disabled="busy || attempted || !!categoryError" />
         </div>
         <FeedbackMessage v-if="categoryError" :message="t(categoryError)" error />
         <p v-if="attempted && error" class="pb-4 text-sm text-muted">

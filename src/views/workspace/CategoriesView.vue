@@ -1,19 +1,40 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { categoriesApi } from '../../services/categories.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { confirmAction, notify } from '../../services/feedback'
 import { useAuthStore } from '../../stores/auth'
-import { t } from '../../services/workspace-language'
-import type { CategoryColor, DocumentCategory } from '../../types/documents'
+import { formatNumber, t } from '../../services/workspace-language'
+import type { CategoryColor, DocumentCategory, Page } from '../../types/documents'
 import { categoryColorClass, categoryColors } from '../../utils/category'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
+import SelectControl from '../../components/ui/SelectControl.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
-const categories = ref<DocumentCategory[]>([])
+const page = ref<Page<DocumentCategory>>()
+const categories = computed(() => page.value?.data ?? [])
+const query = ref('')
+const perPage = ref(10)
+const sort = ref('newest')
+const sortOptions = computed(() => [
+  { value: 'newest', label: t('Terbaru dibuat') },
+  { value: 'oldest', label: t('Terlama dibuat') },
+  { value: 'name_asc', label: t('Nama A–Z') },
+  { value: 'name_desc', label: t('Nama Z–A') },
+  { value: 'count_desc', label: t('Dokumen terbanyak') },
+  { value: 'count_asc', label: t('Dokumen tersedikit') },
+])
+const pageMatchesFilters = ref(false)
+const showingStart = computed(() => page.value?.meta.total
+  ? (page.value.meta.current_page - 1) * page.value.meta.per_page + 1 : 0)
+const showingEnd = computed(() => page.value
+  ? Math.min(page.value.meta.current_page * page.value.meta.per_page, page.value.meta.total) : 0)
+let requestId = 0
+let active = true
+let queryTimer: ReturnType<typeof setTimeout> | undefined
 const loaded = ref(false)
 const loading = ref(false)
 const saving = ref(false)
@@ -29,17 +50,35 @@ const color = ref<CategoryColor>('gray')
 const description = ref('')
 const conflict = ref<{ guid: string; count: number }>()
 
-async function load() {
+async function load(number = 1) {
+  clearTimeout(queryTimer)
+  const request = ++requestId
+  const identity = auth.user?.guid
   loading.value = true
+  pageMatchesFilters.value = false
   loadError.value = ''
+  openActions.value = ''
   try {
-    categories.value = await categoriesApi.list()
+    const result = await categoriesApi.listPage({
+      q: query.value.trim(), page: number, perPage: perPage.value,
+      sortBy: sort.value.startsWith('name_') ? 'name' : sort.value.startsWith('count_') ? 'documents_count' : 'created_at',
+      sortDirection: ['oldest', 'name_asc', 'count_asc'].includes(sort.value) ? 'asc' : 'desc',
+    })
+    if (!active || request !== requestId || identity !== auth.user?.guid) return
+    const lastPage = Math.max(1, result.meta.last_page)
+    if (number > lastPage) {
+      await load(lastPage)
+      return
+    }
+    page.value = result
+    pageMatchesFilters.value = true
     loaded.value = true
   } catch (cause) {
+    if (!active || request !== requestId || identity !== auth.user?.guid) return
     loadError.value = workspaceError(cause).message
     if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
   } finally {
-    loading.value = false
+    if (active && request === requestId) loading.value = false
   }
 }
 
@@ -72,14 +111,14 @@ async function save() {
   fields.value = {}
   try {
     const payload = { name: name.value.trim(), color_token: color.value, description: description.value.trim() || null }
-    const saved = editingGuid.value
-      ? await categoriesApi.update(editingGuid.value, payload)
-      : await categoriesApi.create(payload)
-    categories.value = editingGuid.value
-      ? categories.value.map((item) => item.guid === saved.guid ? saved : item).sort((a, b) => a.name.localeCompare(b.name))
-      : [...categories.value, saved].sort((a, b) => a.name.localeCompare(b.name))
+    if (editingGuid.value) {
+      await categoriesApi.update(editingGuid.value, payload)
+    } else {
+      await categoriesApi.create(payload)
+    }
     dialog.value?.close()
     notify.success(t(editingGuid.value ? 'Kategori berhasil diperbarui.' : 'Kategori berhasil dibuat.'))
+    await load(editingGuid.value ? page.value?.meta.current_page ?? 1 : 1)
   } catch (cause) {
     const error = workspaceError(cause)
     saveError.value = error.message
@@ -106,8 +145,8 @@ async function remove(category: DocumentCategory) {
   }))) return
   try {
     await categoriesApi.delete(category.guid)
-    categories.value = categories.value.filter((item) => item.guid !== category.guid)
     notify.success(t('Kategori berhasil dihapus.'))
+    await load(page.value?.meta.current_page ?? 1)
   } catch (cause) {
     if (axios.isAxiosError(cause) && cause.response?.status === 409 && cause.response.data?.error?.code === 'CATEGORY_IN_USE') {
       const count = Number(cause.response.data?.meta?.usage_count ?? category.documents_count ?? 0)
@@ -130,7 +169,22 @@ function toggleActions(guid: string) {
   openActions.value = openActions.value === guid ? '' : guid
 }
 
-onMounted(load)
+watch(query, () => {
+  clearTimeout(queryTimer)
+  requestId++
+  pageMatchesFilters.value = false
+  loading.value = true
+  loadError.value = ''
+  openActions.value = ''
+  queryTimer = setTimeout(() => void load(1), 400)
+})
+watch([sort, perPage], () => void load(1))
+onMounted(() => void load())
+onBeforeUnmount(() => {
+  active = false
+  requestId++
+  clearTimeout(queryTimer)
+})
 </script>
 
 <template>
@@ -143,16 +197,25 @@ onMounted(load)
     <button type="button" class="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white hover:bg-[#174c39]" @click="openCreate">+ {{ t('Buat kategori') }}</button>
   </div>
 
+  <div class="mb-5 flex flex-wrap items-center gap-3">
+    <label class="relative min-w-0 flex-1 basis-64">
+      <span class="sr-only">{{ t('Cari kategori') }}</span>
+      <span class="material-symbols-outlined pointer-events-none absolute left-3 top-3 text-xl text-muted" aria-hidden="true">search</span>
+      <input v-model="query" type="search" maxlength="255" :placeholder="t('Cari nama kategori…')" class="min-h-11 w-full rounded-lg border border-line bg-white pl-10 pr-3 text-sm" />
+    </label>
+    <SelectControl v-model="sort" :ariaLabel="t('Urutkan')" :options="sortOptions" class="text-sm" />
+  </div>
+
   <FeedbackMessage :message="t(loadError)" error />
-  <button v-if="loadError" type="button" class="mb-4 min-h-11 text-sm font-semibold text-primary underline" @click="load">{{ t('Coba lagi') }}</button>
-  <p v-if="loading && !loaded" role="status" class="py-10 text-center text-sm text-muted">{{ t('Memuat kategori…') }}</p>
-  <section v-else-if="loaded && !categories.length" class="rounded-2xl border border-dashed border-line bg-white px-6 py-12 text-center">
+  <button v-if="loadError" type="button" class="mb-4 min-h-11 text-sm font-semibold text-primary underline" @click="load(page?.meta.current_page ?? 1)">{{ t('Coba lagi') }}</button>
+  <p v-if="loading" role="status" class="py-10 text-center text-sm text-muted">{{ t('Memuat kategori…') }}</p>
+  <section v-else-if="loaded && pageMatchesFilters && !categories.length" class="rounded-2xl border border-dashed border-line bg-white px-6 py-12 text-center">
     <span class="material-symbols-outlined text-4xl text-primary" aria-hidden="true">sell</span>
-    <h2 class="mt-3 text-xl font-semibold">{{ t('Belum ada kategori.') }}</h2>
-    <p class="mt-2 text-sm text-muted">{{ t('Buat kategori pertama Anda. Dokumen tetap dapat disimpan tanpa kategori.') }}</p>
-    <button type="button" class="mt-5 min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white" @click="openCreate">{{ t('Buat kategori') }}</button>
+    <h2 class="mt-3 text-xl font-semibold">{{ t(query.trim() ? 'Tidak ada kategori yang sesuai.' : 'Belum ada kategori.') }}</h2>
+    <p class="mt-2 text-sm text-muted">{{ t(query.trim() ? 'Coba ubah atau hapus pencarian kategori.' : 'Buat kategori pertama Anda. Dokumen tetap dapat disimpan tanpa kategori.') }}</p>
+    <button v-if="!query.trim()" type="button" class="mt-5 min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white" @click="openCreate">{{ t('Buat kategori') }}</button>
   </section>
-  <section v-else class="grid gap-3">
+  <section v-else-if="pageMatchesFilters" class="grid gap-3">
     <article v-for="category in categories" :key="category.guid" class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-line bg-white p-4 sm:gap-5 sm:p-5">
       <span class="grid size-16 shrink-0 place-items-center rounded-2xl sm:size-20" :class="categoryColorClass(category.color_token)">
         <span class="material-symbols-outlined text-4xl sm:text-5xl" aria-hidden="true">folder</span>
@@ -180,6 +243,22 @@ onMounted(load)
       </div>
     </article>
   </section>
+
+  <nav v-if="page && pageMatchesFilters" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman kategori')">
+    <div class="flex items-center gap-2 text-xs font-medium text-muted">
+      {{ t('Tampilkan baris') }}
+      <SelectControl v-model="perPage" :ariaLabel="t('Tampilkan baris')" class="h-9 text-sm" :options="[{ value: 10, label: '10' }, { value: 25, label: '25' }, { value: 50, label: '50' }]" />
+    </div>
+    <div class="ml-auto flex flex-wrap items-center gap-2">
+      <span class="mr-1 text-xs text-muted">{{ t('Menampilkan :start–:end dari :total', { start: formatNumber(showingStart), end: formatNumber(showingEnd), total: formatNumber(page.meta.total) }) }}</span>
+      <button type="button" class="grid size-9 place-items-center rounded-md border border-line bg-white text-ink hover:bg-soft disabled:text-muted disabled:opacity-50" :aria-label="t('Sebelumnya')" :disabled="loading || !page.links.prev" @click="load(page.meta.current_page - 1)">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">chevron_left</span>
+      </button>
+      <button type="button" class="grid size-9 place-items-center rounded-md border border-line bg-white text-ink hover:bg-soft disabled:text-muted disabled:opacity-50" :aria-label="t('Berikutnya')" :disabled="loading || !page.links.next" @click="load(page.meta.current_page + 1)">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">chevron_right</span>
+      </button>
+    </div>
+  </nav>
 
   <dialog v-if="conflict" ref="conflictDialog" aria-labelledby="category-conflict-title" aria-describedby="category-conflict-description" class="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-line bg-white p-6 text-ink shadow-2xl" @close="conflict = undefined">
     <section role="alert">

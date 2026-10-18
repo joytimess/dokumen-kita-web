@@ -1,4 +1,4 @@
-import type { DocumentOcrMatch, DocumentOcrPoint } from '../types/documents'
+import type { DocumentOcrMatch } from '../types/documents'
 
 export interface TextMatch {
   item: number
@@ -18,9 +18,6 @@ export function visibleOcrMatches(
   return matches.filter((match) =>
     !nativeText.get(match.page_number)?.has(match.matched_text.trim().toLowerCase().replace(/\s+/g, ' ')),
   )
-}
-export function ocrPolygonPoints(polygon: DocumentOcrPoint[]): string {
-  return polygon.map(([x, y]) => `${x},${y}`).join(' ')
 }
 export function findTextMatches(items: string[], query: string): TextMatch[] {
   const term = query.trim().toLowerCase()

@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends string | number">
-import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
 type SelectOption<T> = { label: string; value: T }
 
@@ -8,6 +8,7 @@ const props = defineProps<{
   options: SelectOption<T>[]
   ariaLabel: string
   disabled?: boolean
+  floating?: boolean
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: T]
@@ -17,6 +18,8 @@ const emit = defineEmits<{
 const root = ref<HTMLDivElement | null>(null)
 const details = ref<HTMLDetailsElement | null>(null)
 const trigger = ref<HTMLElement | null>(null)
+const listbox = ref<HTMLUListElement | null>(null)
+let parentDialog: HTMLDialogElement | null = null
 const open = ref(false)
 const activeIndex = ref(-1)
 const listboxId = `select-${useId()}`
@@ -27,16 +30,51 @@ function optionId(index: number) {
   return `${listboxId}-option-${index}`
 }
 
-function show() {
+async function show() {
   if (props.disabled) return
   open.value = true
   if (details.value) details.value.open = true
   activeIndex.value = selectedIndex.value < 0 ? 0 : selectedIndex.value
+  await nextTick()
+  if (!open.value) return
+  if (props.floating) {
+    listbox.value?.showPopover()
+    positionDropdown()
+  }
+  scrollActiveOption()
 }
 
 function close() {
   open.value = false
   activeIndex.value = selectedIndex.value
+}
+
+function positionDropdown() {
+  if (!props.floating || !open.value || !trigger.value || !listbox.value) return
+  const rect = trigger.value.getBoundingClientRect()
+  const menu = listbox.value
+  const gap = 4
+  const padding = 8
+  const width = Math.min(rect.width, window.innerWidth - padding * 2)
+  const below = Math.max(0, window.innerHeight - rect.bottom - gap - padding)
+  const above = Math.max(0, rect.top - gap - padding)
+  const upwards = below < Math.min(288, menu.scrollHeight) && above > below
+  Object.assign(menu.style, {
+    width: `${width}px`,
+    left: `${Math.max(padding, Math.min(rect.left, window.innerWidth - width - padding))}px`,
+    maxHeight: `${Math.min(288, upwards ? above : below)}px`,
+  })
+  menu.style.top = `${upwards ? rect.top - gap - menu.getBoundingClientRect().height : rect.bottom + gap}px`
+}
+
+function scrollActiveOption() {
+  if (!open.value) return
+  listbox.value?.querySelector<HTMLElement>(`[id="${optionId(activeIndex.value)}"]`)?.scrollIntoView({ block: 'nearest' })
+}
+
+function closeWithDialog() {
+  listbox.value?.hidePopover()
+  close()
 }
 
 function finishClose() {
@@ -83,6 +121,7 @@ function onKeydown(event: KeyboardEvent) {
     }
   } else if (event.key === 'Escape' && open.value) {
     event.preventDefault()
+    event.stopPropagation()
     close()
   } else if (event.key === 'Tab') close()
 }
@@ -91,8 +130,23 @@ function onOutsidePointerdown(event: PointerEvent) {
   if (!root.value?.contains(event.target as Node)) close()
 }
 
-onMounted(() => document.addEventListener('pointerdown', onOutsidePointerdown))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePointerdown))
+watch(activeIndex, () => void nextTick(scrollActiveOption))
+watch(() => props.disabled, (disabled) => { if (disabled) close() })
+onMounted(() => {
+  document.addEventListener('pointerdown', onOutsidePointerdown)
+  if (props.floating) {
+    parentDialog = root.value?.closest('dialog') ?? null
+    parentDialog?.addEventListener('close', closeWithDialog)
+    window.addEventListener('resize', positionDropdown)
+    document.addEventListener('scroll', positionDropdown, true)
+  }
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onOutsidePointerdown)
+  parentDialog?.removeEventListener('close', closeWithDialog)
+  window.removeEventListener('resize', positionDropdown)
+  document.removeEventListener('scroll', positionDropdown, true)
+})
 </script>
 
 <template>
@@ -115,7 +169,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePoint
         <span class="select-control-chevron material-symbols-outlined" aria-hidden="true">expand_more</span>
       </summary>
       <Transition name="select-dropdown" @after-leave="finishClose">
-        <ul v-if="open" :id="listboxId" class="select-control-options" role="listbox" :aria-label="ariaLabel">
+        <ul v-if="open" :id="listboxId" ref="listbox" class="select-control-options" :class="{ 'select-control-options-floating': floating }" :popover="floating ? 'manual' : undefined" role="listbox" :aria-label="ariaLabel">
           <li
             v-for="(option, index) in options"
             :id="optionId(index)"
