@@ -4,6 +4,7 @@ defineProps<{
   id: string
   label: string
   autocomplete: string
+  placeholder?: string
   error?: string
   hint?: string
   disabled?: boolean
@@ -23,6 +24,7 @@ const visible = ref(false)
         :name="id"
         :type="visible ? 'text' : 'password'"
         :autocomplete="autocomplete"
+        :placeholder="placeholder"
         :disabled="disabled"
         :aria-invalid="!!error"
         :aria-describedby="error ? `${id}-error` : hint ? `${id}-hint` : undefined"
@@ -31,8 +33,8 @@ const visible = ref(false)
         type="button"
         class="absolute inset-y-px right-px flex min-w-11 items-center justify-center rounded-[7px] bg-transparent text-muted transition-colors hover:text-primary motion-reduce:transition-none"
         :disabled="disabled"
-        :aria-label="`${visible ? 'Sembunyikan' : 'Lihat'} ${label.toLowerCase()}`"
-        :title="`${visible ? 'Sembunyikan' : 'Lihat'} ${label.toLowerCase()}`"
+        :aria-label="`${visible ? 'Sembunyikan' : 'Tampilkan'} ${label.toLowerCase()}`"
+        :title="`${visible ? 'Sembunyikan' : 'Tampilkan'} ${label.toLowerCase()}`"
         :aria-pressed="visible"
         :aria-controls="id"
         @click="visible = !visible"
@@ -61,7 +63,7 @@ const visible = ref(false)
         </svg>
       </button>
     </div>
-    <p v-if="hint" :id="`${id}-hint`" class="mt-1.5 text-[11px] text-muted">{{ hint }}</p>
+    <p v-if="hint" :id="`${id}-hint`" class="mt-1.5 text-[11px]" :class="error ? 'text-error' : 'text-muted'">{{ hint }}</p>
     <p v-if="error" :id="`${id}-error`" class="mt-1.5 text-[11px] text-error">{{ error }}</p>
   </div>
 </template>

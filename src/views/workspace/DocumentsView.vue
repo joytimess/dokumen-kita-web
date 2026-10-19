@@ -384,7 +384,10 @@ onUnmounted(() => {
 
   <section class="rounded-2xl border border-line bg-white p-4 shadow-[0_2px_10px_rgba(20,28,48,0.035)] sm:p-6">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
-      <h2 class="text-xl font-semibold">{{ visibility === 'hidden' ? t('Dokumen disembunyikan') : summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
+      <div>
+        <h2 class="text-xl font-semibold">{{ visibility === 'hidden' ? t('Dokumen disembunyikan') : summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
+        <p v-if="!summary" class="mt-2 text-sm text-muted">{{ t('Kelola dan temukan dokumen kamu dengan mudah.') }}</p>
+      </div>
       <div v-if="summary" role="group" :aria-label="t('Filter dokumen')" class="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-soft p-1">
         <button
           v-for="tab in tabs"
@@ -398,11 +401,12 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 sm:items-end">
-      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
-        {{ t('Cari judul dokumen') }}
-        <span class="flex min-w-0 gap-2">
-          <input v-model="query" type="search" maxlength="200" class="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-white px-3 text-sm text-ink" :placeholder="t('Cari judul dokumen')" @input="queryChanged" />
+    <div class="mb-5 grid gap-3 sm:grid-cols-2 sm:items-end" :class="summary ? 'xl:grid-cols-5' : '[&_.select-control-value]:bg-transparent [&_.select-control-value]:p-0 [&_.select-control-trigger]:rounded-xl [&_.select-control-trigger]:px-3'">
+      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted" :class="!summary && 'sm:col-span-2'">
+        {{ t(summary ? 'Cari judul dokumen' : 'Cari dokumen') }}
+        <span class="relative flex min-w-0 gap-2">
+          <svg v-if="!summary" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg>
+          <input v-model="query" type="search" maxlength="200" class="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-white pr-3 text-sm text-ink" :class="summary ? 'pl-3' : 'pl-9'" :placeholder="t(summary ? 'Cari judul dokumen' : 'Cari judul dokumen...')" @input="queryChanged" />
           <button v-if="query" type="button" class="min-h-11 shrink-0 rounded-xl border border-line px-3 text-sm text-primary" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
         </span>
       </label>
@@ -431,10 +435,10 @@ onUnmounted(() => {
         <SelectControl v-model="categoryFilter" :ariaLabel="t('Kategori')" class="min-h-11 w-full text-sm" :options="categoryFilterOptions" @change="filtersChanged" />
       </div>
       <div class="grid gap-2 text-xs font-medium text-muted">
-        {{ t('Urutkan') }}
+        {{ t(summary ? 'Urutkan' : 'Urutkan berdasarkan') }}
         <SelectControl
           v-model="sort"
-          :ariaLabel="t('Urutkan')"
+          :ariaLabel="t(summary ? 'Urutkan' : 'Urutkan berdasarkan')"
           class="min-h-11 text-sm"
           :options="[
             { value: 'created', label: t('Terbaru dibuat') },

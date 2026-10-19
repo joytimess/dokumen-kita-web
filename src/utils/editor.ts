@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
 import type { EditorData } from '../types/documents'
+import { textAlignment } from './tiptap'
 const clean = (value: unknown): string =>
   DOMPurify.sanitize(String(value ?? ''), {
     ALLOWED_TAGS: ['b', 'i', 'u', 'strong', 'em', 'mark', 'code', 'br', 'a', 'span'],
@@ -25,11 +26,11 @@ export function editorPayload(data: EditorData): EditorData {
   if (data.blocks.length > 500) throw new Error('Dokumen maksimal 500 blok.')
   const blocks = data.blocks.map((block) => {
     const d = block.data
-    if (block.type === 'paragraph') return { type: block.type, data: { text: clean(d.text) } }
+    if (block.type === 'paragraph') return { type: block.type, data: { text: clean(d.text), ...textAlignment(d.align) } }
     if (block.type === 'header')
       return {
         type: block.type,
-        data: { text: clean(d.text), level: Math.max(1, Math.min(6, Number(d.level) || 2)) },
+        data: { text: clean(d.text), level: Math.max(1, Math.min(6, Number(d.level) || 2)), ...textAlignment(d.align) },
       }
     if (block.type === 'list')
       return {

@@ -61,6 +61,13 @@ async function focusError() {
   await nextTick()
   form.value?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus()
 }
+function validateField(event: FocusEvent) {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement) || input.type === 'checkbox') return
+  const validation = validateAuth(props.kind, fields)
+  if (validation[input.name]) errors.value[input.name] = validation[input.name]!
+  else delete errors.value[input.name]
+}
 async function submit() {
   if (busy.value || auth.restoring) return
   message.value = ''
@@ -71,9 +78,14 @@ async function submit() {
     await focusError()
     return
   }
-  if (props.kind === 'register' && !(await confirmAction('Buat akun dengan data yang sudah diisi?', {
-    title: 'Buat akun', action: 'Buat akun',
-  }))) return
+  if (
+    props.kind === 'register' &&
+    !(await confirmAction('Buat akun dengan data yang sudah diisi?', {
+      title: 'Buat akun',
+      action: 'Buat akun',
+    }))
+  )
+    return
   busy.value = true
   try {
     if (authMode === 'prototype') message.value = await prototypeSubmit(props.kind)
@@ -94,7 +106,12 @@ async function submit() {
       )
       auth.sessionError = ''
       notify.success(props.kind === 'login' ? 'Berhasil masuk.' : 'Akun berhasil dibuat.')
-      await router.push(afterAuthentication(auth.user!.email_verified, pendingInvitation() ? '/invitations/claim' : route.query.redirect))
+      await router.push(
+        afterAuthentication(
+          auth.user!.email_verified,
+          pendingInvitation() ? '/invitations/claim' : route.query.redirect,
+        ),
+      )
     }
   } catch (error) {
     const feedback = authError(error, props.kind)
@@ -135,7 +152,13 @@ function google() {
     return
   }
   try {
-    authApi.google(pendingInvitation() ? '/invitations/claim' : typeof route.query.redirect === 'string' ? route.query.redirect : undefined)
+    authApi.google(
+      pendingInvitation()
+        ? '/invitations/claim'
+        : typeof route.query.redirect === 'string'
+          ? route.query.redirect
+          : undefined,
+    )
   } catch {
     failed.value = true
     message.value = 'Origin API belum dikonfigurasi dengan benar. Hubungi pengelola.'
@@ -143,19 +166,13 @@ function google() {
 }
 </script>
 <template>
-  <p class="mb-6 text-[11px] font-bold tracking-[0.16em] text-primary">
-    SELAMAT DATANG DI DOKUMEN KITA
-  </p>
+  <p class="auth-form-eyebrow">SELAMAT DATANG DI DOKUMEN KITA</p>
   <h1>{{ copy.title }}</h1>
-  <p
-    class="mb-5 text-[13px] leading-[1.8] text-muted sm:text-sm"
-    :class="kind === 'register' ? 'sm:mb-3! sm:leading-relaxed!' : undefined"
-  >
+  <p class="auth-form-description">
     {{ copy.description }}
   </p>
   <p
     v-if="authMode === 'prototype'"
-    :class="kind === 'register' ? 'sm:mb-3! sm:py-2!' : undefined"
     class="mb-[22px] rounded-md border border-line bg-soft px-3 py-2.5 text-[10px] text-muted"
   >
     Mode prototype · autentikasi dan email belum dihubungkan.
@@ -186,11 +203,8 @@ function google() {
       ref="form"
       novalidate
       :aria-busy="busy"
-      :class="
-        kind === 'register'
-          ? 'sm:[&>div]:mb-2.5! sm:[&_label]:mb-1! sm:[&_input]:min-h-11! sm:[&_input]:py-2!'
-          : undefined
-      "
+      class="auth-fields"
+      @focusout="validateField"
       @submit.prevent="submit"
     >
       <FormField
@@ -198,6 +212,8 @@ function google() {
         id="name"
         v-model="fields.name"
         label="Nama lengkap"
+        placeholder="Contoh: Sarah Anindita"
+        class="auth-field"
         autocomplete="name"
         :maxlength="255"
         :error="errors.name"
@@ -206,7 +222,9 @@ function google() {
       <FormField
         id="email"
         v-model="fields.email"
-        label="Email"
+        :label="kind === 'register' ? 'Email bisnis / pribadi' : 'Email'"
+        placeholder="nama@email.com"
+        class="auth-field"
         type="email"
         autocomplete="email"
         :maxlength="255"
@@ -217,6 +235,8 @@ function google() {
         id="password"
         v-model="fields.password"
         label="Kata sandi"
+        :placeholder="kind === 'register' ? 'Buat kata sandi aman' : 'Masukkan kata sandi'"
+        class="auth-field"
         :autocomplete="kind === 'login' ? 'current-password' : 'new-password'"
         :hint="kind === 'register' ? 'Minimal 8 karakter.' : undefined"
         :error="errors.password"
@@ -227,25 +247,31 @@ function google() {
         id="password_confirmation"
         v-model="fields.password_confirmation"
         label="Konfirmasi kata sandi"
+        placeholder="Ulangi kata sandi"
+        class="auth-field"
         autocomplete="new-password"
         :error="errors.password_confirmation"
         :disabled="busy"
       />
-      <div
-        v-if="kind === 'login'"
-        class="mb-[21px] flex items-center justify-between gap-3 text-[11px] max-[360px]:gap-1.5 [&_a]:flex [&_a]:min-h-11 [&_a]:items-center [&_a]:text-primary [&_a:hover]:underline"
-      >
+      <div v-if="kind === 'login'" class="auth-options">
         <label
           class="flex min-h-11 items-center gap-[7px] [&_input]:size-[15px] [&_input]:accent-primary"
           ><input v-model="fields.remember" type="checkbox" :disabled="busy" /> Ingat saya</label
         ><RouterLink to="/forgot-password">Lupa kata sandi?</RouterLink>
       </div>
-      <BaseButton type="submit" :loading="busy" :disabled="busy || auth.restoring" class="w-full">{{
-        busy ? 'Memproses…' : auth.restoring ? 'Memeriksa sesi…' : copy.button
-      }}</BaseButton>
+      <BaseButton
+        type="submit"
+        :loading="busy"
+        :disabled="busy || auth.restoring"
+        class="auth-submit w-full"
+        >{{ busy ? 'Memproses…' : auth.restoring ? 'Memeriksa sesi…' : copy.button }}</BaseButton
+      >
     </form>
+    <div class="auth-login-divider">
+      <span>OR</span>
+    </div>
     <button
-      class="mt-3 flex min-h-12 w-full items-center justify-center gap-3 rounded-[7px] border border-line bg-white px-4 py-3 text-[13px] font-semibold text-ink transition-colors hover:bg-soft motion-reduce:transition-none"
+      class="auth-google-button"
       type="button"
       :disabled="busy || auth.restoring"
       @click="google"
@@ -270,16 +296,10 @@ function google() {
       </svg>
       {{ kind === 'login' ? 'Masuk dengan Google' : 'Daftar dengan Google' }}
     </button>
-    <p
-      v-if="kind === 'login'"
-      class="mt-[23px] text-center text-xs text-muted [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
-    >
+    <p v-if="kind === 'login'" class="auth-switch">
       Belum punya akun? <RouterLink to="/register">Buat akun</RouterLink>
     </p>
-    <p
-      v-else-if="kind === 'register'"
-      class="mt-[23px] text-center text-xs text-muted sm:mt-2! [&_a]:inline-block [&_a]:py-2 [&_a]:font-semibold [&_a]:text-primary [&_a:hover]:underline"
-    >
+    <p v-else-if="kind === 'register'" class="auth-switch">
       Sudah punya akun? <RouterLink to="/login">Masuk</RouterLink>
     </p>
   </template>

@@ -17,12 +17,14 @@ import type { DocumentOcrMatch, DocumentOcrStatus, Placeholder } from '../../typ
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import SelectControl from '../ui/SelectControl.vue'
 import { formatNumber, t } from '../../services/workspace-language'
+import { resizePlaceholder, type ResizeCorner } from '../../utils/signaturePlacement'
 GlobalWorkerOptions.workerSrc = workerUrl
 const props = defineProps<{
   versionGuid: string
   expectedHash?: string | null
-  overlays?: (Placeholder & { label?: string; image?: string })[]
+  overlays?: (Placeholder & { label?: string; image?: string; color?: string })[]
   editable?: boolean
+  selectedOverlay?: number
 }>()
 const emit = defineEmits<{
   ready: [hash: string, count: number]
@@ -30,6 +32,9 @@ const emit = defineEmits<{
   failure: []
   place: [page: number, x: number, y: number]
   moved: [index: number, x: number, y: number]
+  selected: [index: number]
+  resized: [index: number, geometry: Pick<Placeholder, 'x' | 'y' | 'width' | 'height'>]
+  page: [page: number]
 }>()
 const canvas = ref<HTMLCanvasElement>(),
   textLayer = ref<HTMLDivElement>(),
@@ -61,6 +66,7 @@ let pdf: PDFDocumentProxy | undefined,
   renderTask: RenderTask | undefined,
   textTask: TextLayer | undefined
 let observer: IntersectionObserver | undefined, resize: ResizeObserver | undefined
+let resizeFrame = 0, lastResizeWidth = 0
 let fetchController: AbortController | undefined,
   ocrController: AbortController | undefined,
   ocrTimer: ReturnType<typeof setTimeout> | undefined,
@@ -70,7 +76,7 @@ let fetchController: AbortController | undefined,
   renderGeneration = 0,
   searchGeneration = 0,
   disposed = false
-let drag: { index: number; startX: number; startY: number; x: number; y: number } | undefined
+let drag: { index: number; startX: number; startY: number; area: Placeholder; corner?: ResizeCorner; width: number; height: number } | undefined
 let activeSearchTerm = '',
   searchTimer: ReturnType<typeof setTimeout> | undefined
 const pageOverlays = computed(() =>
@@ -336,6 +342,8 @@ function navigate(number: number) {
 }
 watch(page, (value) => {
   jump.value = value
+  drag = undefined
+  emit('page', value)
 })
 watch([zoom, fit], () => {
   void render()
@@ -450,25 +458,42 @@ function place(event: MouseEvent) {
     (event.clientY - bounds.top) / bounds.height,
   )
 }
-function startDrag(event: PointerEvent, index: number) {
-  if (!props.editable) return
+function startDrag(event: PointerEvent, index: number, corner?: ResizeCorner) {
+  if (!props.editable || rendering.value || error.value || !sheet.value || event.button !== 0) return
+  event.preventDefault()
   const area = props.overlays![index]!
-  drag = { index, startX: event.clientX, startY: event.clientY, x: area.x, y: area.y }
+  const bounds = sheet.value.getBoundingClientRect()
+  emit('selected', index)
+  drag = { index, startX: event.clientX, startY: event.clientY, area: { ...area }, corner, width: bounds.width, height: bounds.height }
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
 }
 function moveDrag(event: PointerEvent) {
-  if (!drag) return
+  if (!drag || !props.editable || rendering.value) return
+  event.preventDefault()
+  const dx = (event.clientX - drag.startX) / drag.width
+  const dy = (event.clientY - drag.startY) / drag.height
+  if (drag.corner) {
+    emit('resized', drag.index, resizePlaceholder(drag.area, dx, dy, drag.corner, {width:Math.max(0.05,44/drag.width),height:Math.max(0.03,28/drag.height)}))
+    return
+  }
   emit(
     'moved',
     drag.index,
-    drag.x + (event.clientX - drag.startX) / width.value,
-    drag.y + (event.clientY - drag.startY) / height.value,
+    drag.area.x + dx,
+    drag.area.y + dy,
   )
 }
+defineExpose({ navigate })
 onMounted(() => {
   void load()
   resize = new ResizeObserver(() => {
-    if (fit.value && !rendering.value) void render()
+    cancelAnimationFrame(resizeFrame)
+    resizeFrame = requestAnimationFrame(() => {
+      const available = scroller.value?.clientWidth ?? 0
+      if (!fit.value || available === lastResizeWidth || disposed) return
+      lastResizeWidth = available
+      void render()
+    })
   })
   if (scroller.value) resize.observe(scroller.value)
 })
@@ -483,6 +508,7 @@ onUnmounted(() => {
   clearTimeout(searchTimer)
   observer?.disconnect()
   resize?.disconnect()
+  cancelAnimationFrame(resizeFrame)
   renderTask?.cancel()
   textTask?.cancel()
   void task?.destroy()
@@ -497,6 +523,7 @@ onUnmounted(() => {
     <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
       <button
         class="min-h-11 rounded border border-line px-3 disabled:opacity-40"
+        :aria-label="t('Halaman sebelumnya')"
         :disabled="page <= 1 || rendering"
         @click="navigate(page - 1)"
       >
@@ -504,6 +531,7 @@ onUnmounted(() => {
       ><span>{{ t('Halaman :current / :count', { current: formatNumber(page), count: count ? formatNumber(count) : '…' }) }}</span
       ><button
         class="min-h-11 rounded border border-line px-3 disabled:opacity-40"
+        :aria-label="t('Halaman berikutnya')"
         :disabled="page >= count || rendering"
         @click="navigate(page + 1)"
       >
@@ -635,28 +663,50 @@ onUnmounted(() => {
           v-for="area in pageOverlays"
           :key="area.index"
           data-overlay
-          class="absolute flex items-center justify-center overflow-hidden border-2 border-dashed border-primary bg-sage/60 text-center text-[10px] text-primary"
-          :class="editable ? 'touch-none cursor-move' : 'pointer-events-none'"
+          class="signature-overlay absolute flex items-center justify-center border-2 text-center text-[10px]"
+          :class="[editable ? 'touch-none cursor-move' : 'pointer-events-none', selectedOverlay === area.index && editable ? 'z-10 border-solid ring-2 ring-offset-2' : 'border-dashed']"
+          :role="editable ? 'button' : undefined"
+          :tabindex="editable ? 0 : undefined"
+          :aria-label="area.label || t('Tanda tangan')"
+          :aria-pressed="editable ? selectedOverlay === area.index : undefined"
           :style="{
             left: `${area.x * 100}%`,
             top: `${area.y * 100}%`,
             width: `${area.width * 100}%`,
             height: `${area.height * 100}%`,
+            '--recipient-color': area.color || 'var(--color-primary)',
           }"
           @pointerdown.stop="startDrag($event, area.index)"
+          @click.stop
+          @keydown.enter.prevent="editable && emit('selected', area.index)"
+          @keydown.space.prevent="editable && emit('selected', area.index)"
           @pointermove="moveDrag"
           @pointerup="drag = undefined"
           @pointercancel="drag = undefined"
+          @lostpointercapture="drag = undefined"
         >
           <img
             v-if="area.image"
             :src="area.image"
             :alt="t('Tanda tangan pilihan Anda')"
             class="h-full w-full object-contain"
-          /><span v-else>{{ area.label || t('Tanda tangan') }}</span>
+          /><span v-else class="max-h-full overflow-hidden px-1 break-words">{{ area.label || t('Tanda tangan') }}</span>
+          <template v-if="editable && selectedOverlay === area.index">
+            <span v-for="corner in (['nw', 'ne', 'sw', 'se'] as const)" :key="corner"
+              :data-resize="corner" aria-hidden="true"
+              class="absolute z-20 grid size-6 touch-none place-items-center"
+              :class="[corner.includes('n') ? '-top-3' : '-bottom-3', corner.includes('w') ? '-left-3' : '-right-3', ['nw', 'se'].includes(corner) ? 'cursor-nwse-resize' : 'cursor-nesw-resize']"
+              @pointerdown.stop="startDrag($event, area.index, corner)"
+              @pointermove.stop="moveDrag" @pointerup.stop="drag = undefined" @pointercancel.stop="drag = undefined">
+              <span class="size-2.5 border border-white bg-current"></span>
+            </span>
+          </template>
         </div>
         <div ref="bottom" class="absolute inset-x-0 bottom-0 h-px"></div>
       </div>
     </div>
   </section>
 </template>
+<style scoped>
+.signature-overlay { color: var(--recipient-color); border-color: var(--recipient-color); background: color-mix(in srgb, var(--recipient-color) 12%, transparent); --tw-ring-color: var(--recipient-color); }
+</style>

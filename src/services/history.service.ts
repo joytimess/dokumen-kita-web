@@ -24,9 +24,9 @@ async function get<T>(path: string, params?: Record<string, string | number>) {
 }
 
 export const historyApi = {
-  list: (filters: { q?: string; date_from?: string; date_to?: string; page?: number }) =>
+  list: (filters: { q?: string; date_from?: string; date_to?: string; page?: number; perPage?: number }) =>
     get<Page<SigningHistoryEvent>>('/me/history', {
-      per_page: 25,
+      per_page: filters.perPage ?? 5,
       ...(filters.q ? { q: filters.q } : {}),
       ...(filters.date_from ? { date_from: filters.date_from } : {}),
       ...(filters.date_to ? { date_to: filters.date_to } : {}),

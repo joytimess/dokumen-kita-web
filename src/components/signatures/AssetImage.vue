@@ -2,7 +2,7 @@
 import { onUnmounted, ref, watch } from 'vue'
 import { documentsApi } from '../../services/documents.service'
 import { t } from '../../services/workspace-language'
-const props = defineProps<{ guid: string }>()
+const props = defineProps<{ guid: string; imageClass?: string }>()
 const url = ref(''),
   failed = ref(false)
 let controller: AbortController | undefined
@@ -34,7 +34,7 @@ onUnmounted(() => {
     v-if="url"
     :src="url"
     :alt="t('Tanda tangan milik Anda')"
-    class="h-24 w-full object-contain"
+    :class="imageClass ?? 'h-24 w-full object-contain'"
   /><span v-else class="flex min-h-24 items-center justify-center text-xs text-muted">{{
     failed ? t('Gambar belum dapat dimuat') : t('Memuat gambar…')
   }}</span>

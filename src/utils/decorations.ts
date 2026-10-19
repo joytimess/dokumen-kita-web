@@ -12,6 +12,12 @@ export type DecorationDraft = {
 
 export const decorationKinds: DecorationKind[] = ['letterhead', 'footer']
 
+export function decorationLayout(width: number, height: number) {
+  const widthMm = Math.min(174, 58 * width / height)
+  const heightMm = widthMm * height / width
+  return { widthMm, heightMm, marginMm: Math.max(45, heightMm + 15) }
+}
+
 export const decorationLabel: Record<DecorationKind, string> = {
   letterhead: 'kop surat',
   footer: 'footer',

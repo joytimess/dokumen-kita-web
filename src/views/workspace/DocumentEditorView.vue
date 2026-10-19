@@ -103,12 +103,6 @@ function editDecorationDraft(kind: DecorationKind, changes: Partial<Pick<Decorat
   Object.assign(decorations.value[kind], changes)
   reviewed.value = false
 }
-const hasDecorations = computed(() =>
-  (['letterhead', 'footer'] as const).some((kind) => {
-    const draft = decorations.value[kind]
-    return !draft.remove && (!!draft.file || !!document.value?.current_version[kind])
-  }),
-)
 
 const { sourceUrl, sourceBusy, importUncertain, upload, retryConversion, openSource, clearSource } =
   useSourceFile({
@@ -436,6 +430,10 @@ async function refreshMetadata() {
 
 async function switchStage(next: number) {
   if (next === stage.value || !(await flush())) return
+  if (next === 3 && !canPublish.value) {
+    notify.error('Simpan dan tinjau seluruh posisi tanda tangan sebelum melanjutkan.')
+    return
+  }
   if (
     extraDirty.value &&
     !(await confirmAction('Perubahan penerima/posisi belum tersimpan. Tinggalkan tahap ini?', {
@@ -489,10 +487,11 @@ function positionsSaved(assignments: Assignment[]) {
   if (document.value) document.value.current_version.assignments = assignments
 }
 
-function signersSaved() {
+function signersSaved(continueToNext = false) {
   extraDirty.value = false
   reviewed.value = false
-  void refreshMetadata()
+  if (continueToNext) void switchStage(2)
+  else void refreshMetadata()
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -740,7 +739,7 @@ onUnmounted(() => {
             :key="document.current_version.conversion_status"
             ref="editor"
             :data="content"
-            :has-decorations="hasDecorations"
+            :decorations="decorations"
             :readonly="
               ['queued', 'processing'].includes(document.current_version.conversion_status ?? '')
             "
@@ -811,6 +810,9 @@ onUnmounted(() => {
           @dirty="extraDirty = $event"
           @reviewed="reviewed = $event"
           @saved="positionsSaved"
+          @manage="switchStage(1)"
+          @back="switchStage(1)"
+          @next="switchStage(3)"
         />
         <div v-else class="rounded-xl border border-line bg-white p-6">
           <h2 class="font-semibold">{{ t('Penempatan belum dapat dilanjutkan.') }}</h2>

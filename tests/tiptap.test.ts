@@ -8,6 +8,26 @@ import { editorDataToHtml, tiptapToEditorData } from '../src/utils/tiptap'
 import { splitTableRanges } from '../src/utils/table'
 
 describe('konversi editor Tiptap dan blok backend', () => {
+  it('mempertahankan paragraf kosong untuk ruang tanda tangan', () => {
+    const data = tiptapToEditorData({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Hormat saya,' }] },
+      { type: 'paragraph' }, { type: 'paragraph' }, { type: 'paragraph' },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Nama penandatangan' }] },
+    ] })
+    expect(data.blocks.map((block) => block.data.text)).toEqual(['Hormat saya,', '', '', '', 'Nama penandatangan'])
+    expect(editorDataToHtml(data)).toBe('<p>Hormat saya,</p><p></p><p></p><p></p><p>Nama penandatangan</p>')
+  })
+  it('menyimpan dan membuka ulang perataan paragraf serta judul', () => {
+    for (const align of ['center', 'right', 'justify']) {
+      const data = tiptapToEditorData({ type: 'doc', content: [
+        { type: 'paragraph', attrs: { textAlign: align }, content: [{ type: 'text', text: 'Isi' }] },
+        { type: 'heading', attrs: { level: 2, textAlign: align }, content: [{ type: 'text', text: 'Judul' }] },
+      ] })
+      expect(data.blocks.map((block) => block.data.align)).toEqual([align, align])
+      expect(editorDataToHtml(data)).toBe(`<p style="text-align:${align}">Isi</p><h2 style="text-align:${align}">Judul</h2>`)
+    }
+    expect(() => editorDataToHtml({ blocks: [{ type: 'paragraph', data: { text: 'Isi', align: 'center;color:red' } }] })).toThrow('Perataan paragraf')
+  })
   it('membuka blok hasil impor sebagai konten Tiptap, termasuk tabel, daftar, dan gambar', () => {
     expect(editorDataToHtml({ blocks: [
       { type: 'header', data: { text: 'Judul', level: 2 } },

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DecorationDraft, DecorationKind } from '../../utils/decorations'
 import { t } from '../../services/workspace-language'
-import SelectControl from '../ui/SelectControl.vue'
 
 defineProps<{
   kind: DecorationKind
@@ -61,33 +60,50 @@ function changeRanges(event: Event) {
     />
     <p class="mt-2 text-xs text-muted">
       {{ t('Unggah gambar yang sudah dipotong. PNG, JPEG, atau WebP; maksimal 1200 × 400 piksel dan 2 MB.') }}
+      {{ t('Disarankan 1200 × 400 piksel (3:1) agar memenuhi lebar area dokumen. Proporsi gambar tetap dipertahankan di PDF.') }}
     </p>
 
-    <div v-if="(hasSaved || draft.file) && !draft.remove" class="mt-4 grid gap-3 text-sm">
-      <div>
-        {{ t('Cakupan halaman') }}
-        <SelectControl
-          :model-value="draft.mode"
-          :ariaLabel="t('Cakupan halaman')"
-          class="ml-2 min-h-11"
-          :options="[
-            { value: 'all', label: t('Semua halaman') },
-            { value: 'range', label: t('Halaman tertentu') },
-          ]"
-          :disabled="saving"
-          @change="changeMode"
-        />
+    <fieldset
+      v-if="(hasSaved || draft.file) && !draft.remove"
+      class="mt-4 min-w-0 rounded-xl border border-line bg-soft/30 p-4 text-sm"
+      :aria-label="t('Cakupan halaman')"
+      :disabled="!editable || busy || saving"
+    >
+      <h3 class="font-semibold">{{ t('Cakupan halaman') }}</h3>
+      <p class="mt-1 text-xs text-muted">{{ t('Tentukan halaman yang akan diproses.') }}</p>
+      <div class="mt-3 grid grid-cols-2 gap-1" role="group" :aria-label="t('Cakupan halaman')">
+        <button
+          v-for="mode in (['all', 'range'] as const)"
+          :key="mode"
+          type="button"
+          class="min-h-11 rounded-full px-3 py-2 text-xs font-semibold transition-colors hover:bg-sage/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+          :class="draft.mode === mode ? 'bg-sage text-primary' : 'text-muted'"
+          :aria-pressed="draft.mode === mode"
+          @click="changeMode(mode)"
+        >
+          {{ t(mode === 'all' ? 'Semua halaman' : 'Halaman tertentu') }}
+        </button>
       </div>
-      <label v-if="draft.mode === 'range'" class="grid gap-1"
-        >{{ t('Nomor/rentang halaman') }}
+      <div v-if="draft.mode === 'all'" class="mt-5 flex items-start gap-3 px-2 pb-2">
+        <span class="material-symbols-outlined mt-0.5 text-lg text-muted" aria-hidden="true">content_copy</span>
+        <div>
+          <p class="font-semibold">{{ t('Seluruh halaman dokumen') }}</p>
+          <p class="mt-1 text-xs text-muted">{{ t('Tidak perlu menentukan nomor halaman.') }}</p>
+        </div>
+      </div>
+      <label v-else class="mt-4 grid gap-1.5 text-muted"
+        >{{ t('Nomor halaman') }}
         <input
+          type="number"
+          min="1"
+          step="1"
           :value="draft.ranges"
-          class="min-h-11 rounded border border-line px-3"
-          placeholder="1, 3-5"
-          :disabled="saving"
+          class="min-h-12 w-full rounded-lg border border-line bg-white px-3 text-ink placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder="1"
           @input="changeRanges"
         />
+        <span class="text-xs">{{ t('Masukkan nomor halaman.') }}</span>
       </label>
-    </div>
+    </fieldset>
   </section>
 </template>

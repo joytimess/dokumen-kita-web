@@ -5,6 +5,7 @@ withDefaults(
     label: string
     type?: string
     autocomplete?: string
+    placeholder?: string
     inputmode?: 'numeric' | 'email' | 'text'
     error?: string
     hint?: string
@@ -32,6 +33,7 @@ function pasteCode(event: ClipboardEvent) {
       :name="id"
       :type="type"
       :autocomplete="autocomplete"
+      :placeholder="placeholder"
       :inputmode="inputmode"
       @paste="pasteCode"
       :maxlength="maxlength"

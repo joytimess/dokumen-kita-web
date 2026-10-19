@@ -99,7 +99,7 @@ export const documentsApi = {
     ),
   audit: (guid: string, page = 1) => get<Page<AuditEvent>>(`/documents/${guid}/audit`, { page, per_page: 25 }),
   versions: (guid: string, page = 1) => get<Page<DocumentVersion>>(`/documents/${guid}/versions`, { page, per_page: 25 }),
-  emails: (guid: string, page = 1) => get<Page<EmailNotification>>(`/documents/${guid}/emails`, { page, per_page: 25 }),
+  emails: (guid: string, page = 1) => get<Page<EmailNotification>>(`/documents/${guid}/emails`, { page, per_page: 3 }),
   async source(guid: string, signal?: AbortSignal) {
     return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${guid}/source`, {
       responseType: 'blob', signal,
@@ -149,12 +149,17 @@ export const documentsApi = {
     }),
   sign: (guid: string, payload: SignaturePayload) =>
     write<unknown>(`/assignments/${guid}/signatures`, payload),
-  assets: (page = 1) => get<Page<SignatureAsset>>('/signature-assets', { page }),
+  assets: (page = 1, perPage = 15) => get<Page<SignatureAsset>>('/signature-assets', { page, per_page: perPage }),
   uploadAsset: (file: File, source: 'drawn' | 'upload') => {
     const body = new FormData()
     body.append('file', file)
     body.append('source_type', source)
     return write<SignatureAsset>('/signature-assets', body)
+  },
+  async deleteAsset(guid: string) {
+    if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')
+    await csrf()
+    await http.delete(`${apiOrigin()}/api/v1/signature-assets/${encodeURIComponent(guid)}`)
   },
   async assetImage(guid: string, signal?: AbortSignal) {
     return (

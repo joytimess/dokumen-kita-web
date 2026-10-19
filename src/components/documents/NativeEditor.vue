@@ -12,12 +12,13 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorData } from '../../types/documents'
 import { editorPayload } from '../../utils/editor'
 import { splitTableRanges } from '../../utils/table'
+import { decorationKinds, decorationLayout, selectedPages, type DecorationDraft, type DecorationKind } from '../../utils/decorations'
 import { documentFontFamilies, editorDataToHtml, isDocumentFontFamily, tiptapToEditorData, type TiptapNode } from '../../utils/tiptap'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { t } from '../../services/workspace-language'
 import { confirmAction } from '../../services/feedback'
 
-const props = defineProps<{ data: EditorData; readonly?: boolean; hasDecorations?: boolean }>()
+const props = defineProps<{ data: EditorData; readonly?: boolean; decorations?: Record<DecorationKind, DecorationDraft> }>()
 const emit = defineEmits<{ change: [data: EditorData]; pending: []; invalid: [message: string] }>()
 const editor = shallowRef<Editor>()
 const fileInput = ref<HTMLInputElement>()
@@ -51,12 +52,27 @@ function selectedBlock(level: number) {
     ? editor.value?.isActive('heading', { level }) ?? false
     : editor.value?.isActive('paragraph') ?? false
 }
+function currentBlockLabel() {
+  for (let level = 1; level <= 6; level++) {
+    if (selectedBlock(level)) return t('Judul :number', { number: level })
+  }
+  return t('Teks normal')
+}
 function closeFormatMenu() {
   if (formatMenu.value) formatMenu.value.open = false
 }
 function closeFormatMenuOnFocusout(event: FocusEvent) {
   const next = event.relatedTarget
   if (!(next instanceof Node) || !formatMenu.value?.contains(next)) closeFormatMenu()
+}
+function closeToolbarMenu(event: KeyboardEvent) {
+  if (event.currentTarget instanceof HTMLDetailsElement) event.currentTarget.open = false
+}
+function closeToolbarMenuOnFocusout(event: FocusEvent) {
+  const menu = event.currentTarget
+  const next = event.relatedTarget
+  if (menu instanceof HTMLDetailsElement && (!(next instanceof Node) || !menu.contains(next)))
+    menu.open = false
 }
 function formatFont(fontFamily: string) {
   if (!editor.value || locked) return
@@ -409,14 +425,50 @@ const paperHeight = 1123
 const paperGap = 24
 const paperPaddingX = 68
 const paperPaddingY = 76
-const decoratedPaperPaddingY = 170
 const paperStride = paperHeight + paperGap
+const editorPageCount = ref(1)
+const decorationSizes = ref<Partial<Record<DecorationKind, ReturnType<typeof decorationLayout>>>>({})
+function decorationLoaded(kind: DecorationKind, event: Event) {
+  const image = event.target as HTMLImageElement
+  decorationSizes.value[kind] = decorationLayout(image.naturalWidth, image.naturalHeight)
+}
+const visibleDecorations = computed(() => decorationKinds.filter((kind) => {
+  const draft = props.decorations?.[kind]
+  return draft?.imageUrl && !draft.remove
+}))
+watch(() => decorationKinds.map((kind) => props.decorations?.[kind].imageUrl), (urls, previous) => {
+  decorationKinds.forEach((kind, index) => {
+    if (urls[index] !== previous[index]) delete decorationSizes.value[kind]
+  })
+})
+const paperMargin = computed(() => Math.max(20, ...visibleDecorations.value.map(
+  (kind) => decorationSizes.value[kind]?.marginMm ?? 45,
+)))
+const decorationOverlays = computed(() => visibleDecorations.value.flatMap((kind) => {
+  const draft = props.decorations![kind]
+  const size = decorationSizes.value[kind]
+  const pages = selectedPages(draft)
+  if (!size || !pages) return []
+  return Array.from({ length: editorPageCount.value }, (_, index) => index + 1)
+    .filter((page) => pages.mode === 'all' || pages.ranges.some(([start, end]) => page >= start && page <= end))
+    .map((page) => ({
+      key: `${kind}-${page}`,
+      src: draft.imageUrl,
+      style: {
+        width: `${size.widthMm * 96 / 25.4}px`,
+        height: `${size.heightMm * 96 / 25.4}px`,
+        left: `${(paperWidth - size.widthMm * 96 / 25.4) / 2}px`,
+        top: `${(page - 1) * paperStride + (kind === 'letterhead' ? 7 * 96 / 25.4 : paperHeight - (7 + size.heightMm) * 96 / 25.4)}px`,
+      },
+    }))
+}))
 const paperStyle = computed(() => ({
   '--paper-width': `${paperWidth}px`,
   '--paper-height': `${paperHeight}px`,
   '--paper-gap': `${paperGap}px`,
   '--paper-padding-x': `${paperPaddingX}px`,
-  '--paper-padding-y': `${props.hasDecorations ? decoratedPaperPaddingY : paperPaddingY}px`,
+  '--paper-padding-y': `${paperMargin.value * 96 / 25.4}px`,
+  '--paper-total-height': `${editorPageCount.value * paperStride - paperGap}px`,
 }))
 const paperPagesKey = new PluginKey<DecorationSet>('paperPages')
 const PaperPages = Extension.create({
@@ -435,38 +487,87 @@ const PaperPages = Extension.create({
       },
       view(view) {
         let frame = 0
-        let previous = ''
         const measure = () => {
           if (!view.dom.isConnected) return
           const pageStyle = getComputedStyle(view.dom)
           const paddingTop = parseFloat(pageStyle.paddingTop) || paperPaddingY
           const paddingBottom = parseFloat(pageStyle.paddingBottom) || paperPaddingY
-          let y = paddingTop
           const gaps: { position: number; height: number }[] = []
-          view.state.doc.forEach((_node, position) => {
-            const element = view.nodeDOM(position)
-            if (!(element instanceof HTMLElement)) return
-            const style = getComputedStyle(element)
-            const height = element.getBoundingClientRect().height + (parseFloat(style.marginBottom) || 0)
-            const page = Math.floor(y / paperStride)
+          // Measure without existing visual gaps so reformatting cannot accumulate their heights.
+          const clone = view.dom.cloneNode(true) as HTMLElement
+          const originalText = document.createTreeWalker(view.dom, NodeFilter.SHOW_TEXT)
+          const clonedText = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
+          const textSources = new Map<Node, Node>()
+          let original: Node | null, copied: Node | null
+          while ((original = originalText.nextNode()) && (copied = clonedText.nextNode())) textSources.set(copied, original)
+          clone.querySelectorAll('.editor-page-gap').forEach((gap) => gap.remove())
+          clone.setAttribute('aria-hidden', 'true')
+          clone.contentEditable = 'false'
+          Object.assign(clone.style, { position: 'absolute', top: '0', left: '0', visibility: 'hidden', pointerEvents: 'none', minHeight: '0' })
+          view.dom.parentElement!.append(clone)
+          const top = clone.getBoundingClientRect().top
+          let addedHeight = 0
+          const place = (position: number, y: number, height: number) => {
+            const actualY = y + addedHeight
+            const page = Math.floor(actualY / paperStride)
             const pageEnd = page * paperStride + paperHeight - paddingBottom
-            if (height <= paperHeight - paddingTop - paddingBottom && y + height > pageEnd) {
-              const gap = (page + 1) * paperStride + paddingTop - y
+            if (height <= paperHeight - paddingTop - paddingBottom && actualY + height > pageEnd) {
+              const gap = (page + 1) * paperStride + paddingTop - actualY
               gaps.push({ position, height: gap })
-              y += gap
+              addedHeight += gap
             }
-            y += height
+          }
+          let blockIndex = 0
+          view.state.doc.forEach((node, position) => {
+            const element = clone.children[blockIndex++] as HTMLElement
+            if (!element) return
+            const bounds = element.getBoundingClientRect()
+            const height = bounds.height + (parseFloat(getComputedStyle(element).marginBottom) || 0)
+            if (height <= paperHeight - paddingTop - paddingBottom || !['paragraph', 'heading', 'bulletList', 'orderedList'].includes(node.type.name)) {
+              place(position, bounds.top - top, height)
+              return
+            }
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+            let text: Node | null
+            let previousLine = -Infinity
+            while ((text = walker.nextNode())) {
+              const source = textSources.get(text)
+              if (!source || !text.textContent?.length) continue
+              const range = document.createRange()
+              range.selectNodeContents(text)
+              const rects = Array.from(range.getClientRects())
+              const lineHeight = parseFloat(getComputedStyle(text.parentElement!).lineHeight)
+              for (const rect of rects) {
+                if (!rect.width || Math.abs(rect.top - previousLine) < 1) continue
+                previousLine = rect.top
+                let low = 0, high = text.textContent.length - 1
+                while (low < high) {
+                  const middle = Math.floor((low + high) / 2)
+                  range.setStart(text, middle)
+                  range.setEnd(text, middle + 1)
+                  if (range.getBoundingClientRect().top < rect.top - 1) low = middle + 1
+                  else high = middle
+                }
+                place(view.posAtDOM(source, low), rect.top - top - (lineHeight - rect.height) / 2, lineHeight)
+              }
+            }
           })
-          const signature = JSON.stringify(gaps)
-          if (signature === previous) return
-          previous = signature
+          const contentHeight = clone.getBoundingClientRect().height + addedHeight
+          clone.remove()
+          editorPageCount.value = Math.max(1, Math.ceil((contentHeight + paperGap) / paperStride))
+          // Formatting can remove mapped widgets even when the target positions stay the same.
+          const existing = paperPagesKey.getState(view.state)?.find() ?? []
+          if (existing.length === gaps.length && existing.every((decoration, index) =>
+            decoration.from === gaps[index]!.position && decoration.spec.height === gaps[index]!.height,
+          )) return
           const decorations = DecorationSet.create(view.state.doc, gaps.map(({ position, height }) =>
             Decoration.widget(position, () => {
-              const gap = document.createElement('div')
+              const gap = document.createElement('span')
               gap.className = 'editor-page-gap'
               gap.style.height = `${height}px`
+              gap.contentEditable = 'false'
               return gap
-            }, { side: -1 }),
+            }, { side: -1, height, key: `page-gap-${position}-${height}` }),
           ))
           view.dispatch(view.state.tr.setMeta(paperPagesKey, decorations).setMeta('addToHistory', false))
         }
@@ -476,11 +577,12 @@ const PaperPages = Extension.create({
         }
         const observer = new ResizeObserver(schedule)
         observer.observe(view.dom)
+        document.fonts?.addEventListener('loadingdone', schedule)
         void document.fonts?.ready.then(schedule)
         schedule()
         return {
           update: schedule,
-          destroy() { cancelAnimationFrame(frame); observer.disconnect() },
+          destroy() { cancelAnimationFrame(frame); observer.disconnect(); document.fonts?.removeEventListener('loadingdone', schedule) },
         }
       },
     })]
@@ -585,7 +687,7 @@ async function addImage(event: Event) {
 watch(() => props.readonly, (value) => {
   if (!locked) editor.value?.setEditable(!value)
 })
-watch(() => props.hasDecorations, () => {
+watch(paperMargin, () => {
   const current = editor.value
   if (current) current.view.dispatch(current.state.tr)
 }, { flush: 'post' })
@@ -638,19 +740,20 @@ onUnmounted(() => {
 <template>
   <div>
     <FeedbackMessage :message="t(error)" error />
-    <div v-if="editor && !readonly" role="toolbar" :aria-label="t('Format dokumen')" class="mb-2 flex flex-wrap items-center gap-1 rounded-xl border border-line bg-white p-2 text-ink">
+    <div v-if="editor && !readonly" role="toolbar" :aria-label="t('Format dokumen')" class="editor-toolbar mb-2 rounded-xl border border-line bg-white text-ink">
+      <div class="editor-toolbar-row editor-toolbar-main-row flex flex-wrap items-center gap-1 border-b border-line px-2 py-6">
       <details
         ref="formatMenu"
-        class="editor-format-menu relative"
+        class="editor-toolbar-menu relative"
         @keydown.esc.prevent="closeFormatMenu"
         @focusout="closeFormatMenuOnFocusout"
       >
-        <summary class="editor-format-summary inline-flex h-10 cursor-pointer items-center gap-2 rounded border border-line bg-white px-3 text-sm text-ink hover:bg-soft">
-          <span class="material-symbols-outlined" aria-hidden="true">format_size</span>
-          <span>{{ t('Format dokumen') }}</span>
-          <span class="editor-format-chevron material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        <summary class="editor-toolbar-summary inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-1.5 text-sm hover:bg-soft">
+          <span class="material-symbols-outlined" aria-hidden="true">title</span>
+          <span>{{ currentBlockLabel() }}</span>
+          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
         </summary>
-        <div class="absolute left-0 top-full z-30 mt-2 max-h-80 w-64 overflow-y-auto rounded-xl border border-line bg-white p-1.5 shadow-lg">
+        <div class="editor-toolbar-panel left-0 max-h-80 w-64 overflow-y-auto">
           <div class="px-2 pb-1 pt-2 text-xs font-semibold text-muted">{{ t('Jenis paragraf') }}</div>
           <button type="button" class="editor-format-item" :aria-pressed="selectedBlock(0)" @click="formatBlock(0)">
             <span class="material-symbols-outlined" aria-hidden="true">subject</span>
@@ -671,26 +774,34 @@ onUnmounted(() => {
           </button>
         </div>
       </details>
-      <div class="flex rounded border border-line" role="group" :aria-label="t('Gaya teks')">
+      <div class="flex items-center gap-0.5" role="group" :aria-label="t('Gaya teks')">
         <button type="button" class="editor-tool" :aria-label="t('Tebal')" :title="t('Tebal')" :aria-pressed="active('bold')" @click="editor.chain().focus().toggleBold().run()"><span class="material-symbols-outlined" aria-hidden="true">format_bold</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Miring')" :title="t('Miring')" :aria-pressed="active('italic')" @click="editor.chain().focus().toggleItalic().run()"><span class="material-symbols-outlined" aria-hidden="true">format_italic</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Garis bawah')" :title="t('Garis bawah')" :aria-pressed="active('underline')" @click="editor.chain().focus().toggleUnderline().run()"><span class="material-symbols-outlined" aria-hidden="true">format_underlined</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Sorot')" :title="t('Sorot')" :aria-pressed="active('highlight')" @click="editor.chain().focus().toggleHighlight().run()"><span class="material-symbols-outlined" aria-hidden="true">ink_highlighter</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" :aria-label="t('Perataan paragraf')">
+      <span class="editor-toolbar-divider" aria-hidden="true"></span>
+      <div class="flex items-center gap-0.5" role="group" :aria-label="t('Perataan paragraf')">
         <button type="button" class="editor-tool" :aria-label="t('Rata kiri')" :title="t('Rata kiri')" :aria-pressed="aligned('left')" @click="editor.chain().focus().setTextAlign('left').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_left</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Rata tengah')" :title="t('Rata tengah')" :aria-pressed="aligned('center')" @click="editor.chain().focus().setTextAlign('center').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_center</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Rata kanan')" :title="t('Rata kanan')" :aria-pressed="aligned('right')" @click="editor.chain().focus().setTextAlign('right').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_right</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Rata kiri-kanan')" :title="t('Rata kiri-kanan')" :aria-pressed="aligned('justify')" @click="editor.chain().focus().setTextAlign('justify').run()"><span class="material-symbols-outlined" aria-hidden="true">format_align_justify</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" :aria-label="t('Daftar dan tautan')">
+      <span class="editor-toolbar-divider" aria-hidden="true"></span>
+      <div class="flex items-center gap-0.5" role="group" :aria-label="t('Daftar dan tautan')">
         <button type="button" class="editor-tool" :aria-label="t('Daftar poin')" :title="t('Daftar poin')" :aria-pressed="active('bulletList')" @click="editor.chain().focus().toggleBulletList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_bulleted</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Daftar nomor')" :title="t('Daftar nomor')" :aria-pressed="active('orderedList')" @click="editor.chain().focus().toggleOrderedList().run()"><span class="material-symbols-outlined" aria-hidden="true">format_list_numbered</span></button>
-        <button type="button" class="editor-tool" :aria-label="t('Kurangi tingkat daftar')" :title="t('Kurangi tingkat daftar (Shift+Tab)')" :disabled="!editor.can().liftListItem('listItem')" @click="editor.chain().focus().liftListItem('listItem').run()"><span class="material-symbols-outlined" aria-hidden="true">format_indent_decrease</span></button>
-        <button type="button" class="editor-tool" :aria-label="t('Tambah tingkat daftar')" :title="t('Tambah tingkat daftar (Tab)')" :disabled="listDepth() >= 3 || !editor.can().sinkListItem('listItem')" @click="indentList"><span class="material-symbols-outlined" aria-hidden="true">format_indent_increase</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Tautan')" :title="t('Tautan')" @click="link"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>
       </div>
-      <div class="flex rounded border border-line" role="group" :aria-label="t('Tabel')">
+      </div>
+      <div class="editor-toolbar-row flex flex-wrap items-center gap-2 px-2 py-3.5">
+      <details class="editor-toolbar-menu relative" @keydown.esc.prevent="closeToolbarMenu" @focusout="closeToolbarMenuOnFocusout">
+        <summary class="editor-toolbar-summary inline-flex h-10 cursor-pointer items-center gap-2 rounded px-2 text-sm hover:bg-soft">
+          <span class="material-symbols-outlined" aria-hidden="true">table_chart</span>
+          <span>{{ t('Tabel') }}</span>
+          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+        </summary>
+        <div class="editor-toolbar-panel left-0 grid w-80 max-w-[calc(100vw-2rem)] grid-cols-4 gap-1">
         <button type="button" class="editor-tool" :aria-label="t('Buat tabel')" :title="t('Buat tabel')" @click="editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()"><span class="material-symbols-outlined" aria-hidden="true">table_chart</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Tambah kolom sebelum')" :title="t('Tambah kolom sebelum')" :disabled="!editor.can().addColumnBefore()" @click="editor.chain().focus().addColumnBefore().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_left</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Tambah kolom sesudah')" :title="t('Tambah kolom sesudah')" :disabled="!editor.can().addColumnAfter()" @click="editor.chain().focus().addColumnAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_column_right</span></button>
@@ -699,22 +810,48 @@ onUnmounted(() => {
         <button type="button" class="editor-tool" :aria-label="t('Tambah baris sesudah')" :title="t('Tambah baris sesudah')" :disabled="!editor.can().addRowAfter()" @click="editor.chain().focus().addRowAfter().run()"><span class="material-symbols-outlined" aria-hidden="true">add_row_below</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Hapus baris')" :title="t('Hapus baris')" :disabled="!editor.can().deleteRow()" @click="removeTablePart('row')"><span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Hapus tabel')" :title="t('Hapus tabel')" :disabled="!editor.can().deleteTable()" @click="removeTablePart('table')"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
-        <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke atas')" :title="t('Pindahkan tabel ke atas')" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-        <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke bawah')" :title="t('Pindahkan tabel ke bawah')" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
-        <button type="button" class="editor-tool" :aria-label="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :title="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Gabungkan sel')" :title="t('Gabungkan sel')" :disabled="!editor.can().mergeCells()" @click="editor.chain().focus().mergeCells().run()"><span class="material-symbols-outlined" aria-hidden="true">merge</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Bagi sel')" :title="t('Bagi sel')" :disabled="!canSplitCell()" @click="openSplitDialog"><span class="material-symbols-outlined" aria-hidden="true">splitscreen</span></button>
+        </div>
+      </details>
+      <details class="editor-toolbar-menu relative" @keydown.esc.prevent="closeToolbarMenu" @focusout="closeToolbarMenuOnFocusout">
+        <summary class="editor-toolbar-summary inline-flex h-10 cursor-pointer items-center gap-2 rounded px-2 text-sm hover:bg-soft">
+          <span class="material-symbols-outlined" aria-hidden="true">view_quilt</span>
+          <span>{{ t('Tata letak') }}</span>
+          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+        </summary>
+        <div class="editor-toolbar-panel left-0 w-80 max-w-[calc(100vw-2rem)]">
+          <div class="flex flex-wrap items-center gap-1" role="group" :aria-label="t('Tata letak')">
+            <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke atas')" :title="t('Pindahkan tabel ke atas')" :disabled="!canMoveTable('up')" @click="moveTable('up')"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+            <button type="button" class="editor-tool" :aria-label="t('Pindahkan tabel ke bawah')" :title="t('Pindahkan tabel ke bawah')" :disabled="!canMoveTable('down')" @click="moveTable('down')"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+            <button type="button" class="editor-tool" :aria-label="t('Kurangi tingkat daftar')" :title="t('Kurangi tingkat daftar (Shift+Tab)')" :disabled="!editor.can().liftListItem('listItem')" @click="editor.chain().focus().liftListItem('listItem').run()"><span class="material-symbols-outlined" aria-hidden="true">format_indent_decrease</span></button>
+            <button type="button" class="editor-tool" :aria-label="t('Tambah tingkat daftar')" :title="t('Tambah tingkat daftar (Tab)')" :disabled="listDepth() >= 3 || !editor.can().sinkListItem('listItem')" @click="indentList"><span class="material-symbols-outlined" aria-hidden="true">format_indent_increase</span></button>
+          </div>
+          <label class="table-height-control mt-2"><span>{{ t('Tinggi minimum baris (px)') }}</span><input v-model="rowMinimumHeight" type="number" min="1" max="1200" inputmode="numeric" :disabled="!selectedTable()"></label>
+          <div class="mt-1 flex items-center gap-1">
+            <button type="button" class="editor-tool" :aria-label="t('Terapkan tinggi minimum')" :title="t('Terapkan tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight()"><span class="material-symbols-outlined" aria-hidden="true">height</span></button>
+            <button type="button" class="editor-tool" :aria-label="t('Hapus tinggi minimum')" :title="t('Hapus tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight(true)"><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
+          </div>
+        </div>
+      </details>
+      <details class="editor-toolbar-menu relative" @keydown.esc.prevent="closeToolbarMenu" @focusout="closeToolbarMenuOnFocusout">
+        <summary class="editor-toolbar-summary inline-flex h-10 cursor-pointer items-center gap-2 rounded px-2 text-sm hover:bg-soft">
+          <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+          <span>{{ t('Properti') }}</span>
+          <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+        </summary>
+        <div class="editor-toolbar-panel left-0 flex w-80 max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1">
+          <button type="button" class="editor-tool" :aria-label="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :title="t(tableLinesHidden() ? 'Tampilkan garis tabel' : 'Sembunyikan garis tabel')" :disabled="!selectedTable()" @click="toggleTableLines"><span class="material-symbols-outlined" aria-hidden="true">{{ tableLinesHidden() ? 'visibility' : 'visibility_off' }}</span></button>
         <label class="table-select"><span class="sr-only">{{ t('Warna sel') }}</span><select :aria-label="t('Warna sel')" :value="cellAttribute('backgroundColor') || ''" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('backgroundColor', $event)"><option value="">{{ t('Tanpa warna') }}</option><option value="gray">{{ t('Abu-abu') }}</option><option value="blue">{{ t('Biru') }}</option><option value="green">{{ t('Hijau') }}</option><option value="yellow">{{ t('Kuning') }}</option><option value="orange">{{ t('Jingga') }}</option><option value="red">{{ t('Merah') }}</option><option value="purple">{{ t('Ungu') }}</option></select></label>
         <label class="table-select"><span class="sr-only">{{ t('Perataan sel') }}</span><select :aria-label="t('Perataan sel')" :value="cellAttribute('align') || ''" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('align', $event)"><option value="">{{ t('Rata kiri') }}</option><option value="center">{{ t('Rata tengah') }}</option><option value="right">{{ t('Rata kanan') }}</option><option value="justify">{{ t('Rata kiri-kanan') }}</option></select></label>
         <label class="table-select"><span class="sr-only">{{ t('Perataan vertikal sel') }}</span><select :aria-label="t('Perataan vertikal sel')" :value="cellAttribute('verticalAlign') || 'top'" :disabled="!selectedTable()" @change="setCellAttributeFromEvent('verticalAlign', $event)"><option value="top">{{ t('Atas') }}</option><option value="middle">{{ t('Tengah') }}</option><option value="bottom">{{ t('Bawah') }}</option></select></label>
         <button type="button" class="editor-tool" :aria-label="t(cellBorderHidden() ? 'Tampilkan garis sel' : 'Sembunyikan garis sel')" :title="t(cellBorderHidden() ? 'Tampilkan garis sel' : 'Sembunyikan garis sel')" :aria-pressed="!cellBorderHidden()" :disabled="!selectedTable()" @click="setCellBorder"><span class="material-symbols-outlined" aria-hidden="true">border_outer</span></button>
-        <label class="table-height-control"><span>{{ t('Tinggi minimum baris (px)') }}</span><input v-model="rowMinimumHeight" type="number" min="1" max="1200" inputmode="numeric" :disabled="!selectedTable()"></label>
-        <button type="button" class="editor-tool" :aria-label="t('Terapkan tinggi minimum')" :title="t('Terapkan tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight()"><span class="material-symbols-outlined" aria-hidden="true">height</span></button>
-        <button type="button" class="editor-tool" :aria-label="t('Hapus tinggi minimum')" :title="t('Hapus tinggi minimum')" :disabled="!selectedTable()" @click="setRowHeight(true)"><span class="material-symbols-outlined" aria-hidden="true">remove</span></button>
-      </div>
-      <div class="flex rounded border border-line" role="group" :aria-label="t('Gambar')">
+        </div>
+      </details>
+        <div class="ml-auto flex items-center gap-1" role="group" :aria-label="t('Gambar')">
         <button type="button" class="editor-tool" :aria-label="t('Tambah gambar')" :title="t('Tambah gambar')" @click="fileInput?.click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span></button>
         <button type="button" class="editor-tool" :aria-label="t('Keterangan gambar')" :title="t('Keterangan gambar')" :disabled="!active('image')" @click="caption"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span></button>
+      </div>
       </div>
       <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="addImage">
     </div>
@@ -727,17 +864,26 @@ onUnmounted(() => {
         <div class="flex justify-end gap-2"><button type="button" class="min-h-10 rounded border border-line px-4" @click="splitDialog?.close()">{{ t('Batal') }}</button><button type="submit" class="min-h-10 rounded bg-primary px-4 text-white">{{ t('Bagi sel') }}</button></div>
       </form>
     </dialog>
-    <div class="relative">
-      <EditorContent :editor="editor" :style="paperStyle" class="editor-paper-surface min-w-0 overflow-x-auto rounded-xl bg-[#e8e8ec] py-6" />
+    <div class="editor-paper-surface min-w-0 overflow-x-auto rounded-xl bg-[#e8e8ec] py-6" :style="paperStyle">
+      <img v-for="kind in visibleDecorations" :key="`${kind}-${decorations![kind].imageUrl}`" :src="decorations![kind].imageUrl" alt="" hidden @load="decorationLoaded(kind, $event)">
+      <div class="editor-paper-stack">
+        <EditorContent :editor="editor" />
+        <div class="editor-decoration-overlay" aria-hidden="true">
+          <img v-for="overlay in decorationOverlays" :key="overlay.key" :src="overlay.src" :style="overlay.style" alt="" draggable="false">
+        </div>
+      </div>
     </div>
   </div>
 </template>
 <style scoped>
+.editor-paper-stack { position: relative; width: var(--paper-width); margin-inline: auto; }
+.editor-decoration-overlay { position: absolute; inset: 0; pointer-events: none; user-select: none; }
+.editor-decoration-overlay img { position: absolute; opacity: 0.5; object-fit: contain; }
 .editor-paper-surface :deep(.tiptap) {
   box-sizing: border-box;
   width: var(--paper-width);
   margin-inline: auto;
-  min-height: var(--paper-height);
+  min-height: var(--paper-total-height);
   padding: var(--paper-padding-y) var(--paper-padding-x);
   background: repeating-linear-gradient(to bottom, white 0 calc(var(--paper-height) - 1px), #cfd4d2 calc(var(--paper-height) - 1px) var(--paper-height), #e8e8ec var(--paper-height) calc(var(--paper-height) + var(--paper-gap)));
   box-shadow: 0 0 0 1px #cfd4d2;
@@ -749,16 +895,23 @@ onUnmounted(() => {
 }
 :deep(.tiptap p) { margin: 0 0 13.333px; }
 :deep(.tiptap [data-font-family='Arial']) { font-family: Arial, Helvetica, sans-serif; }
-:deep(.tiptap [data-font-family='Calibri']) { font-family: Calibri, Carlito, Arial, sans-serif; }
+:deep(.tiptap [data-font-family='Calibri']), :deep(.tiptap [data-font-family='Aptos']) { font-family: 'Dokumen Carlito', sans-serif; }
 :deep(.tiptap [data-font-family='Times New Roman']) { font-family: 'Times New Roman', Times, serif; }
-:deep(.tiptap [data-font-family='Aptos']) { font-family: Aptos, Calibri, Arial, sans-serif; }
 :deep(.tiptap [data-font-family='Georgia']) { font-family: Georgia, serif; }
-:deep(.tiptap h1), :deep(.tiptap h2), :deep(.tiptap h3), :deep(.tiptap h4), :deep(.tiptap h5), :deep(.tiptap h6) { margin: 16px 0 9.333px; }
+:deep(.tiptap h1), :deep(.tiptap h2), :deep(.tiptap h3), :deep(.tiptap h4), :deep(.tiptap h5), :deep(.tiptap h6) { margin: 16px 0 9.333px; font-weight: 700; }
+:deep(.tiptap h1) { font-size: 2em; }
+:deep(.tiptap h2) { font-size: 1.5em; }
+:deep(.tiptap h3) { font-size: 1.17em; }
+:deep(.tiptap h4) { font-size: 1em; }
+:deep(.tiptap h5) { font-size: .83em; }
+:deep(.tiptap h6) { font-size: .67em; }
 :deep(.tiptap ul), :deep(.tiptap ol) { padding-left: 24px; }
 :deep(.tiptap li) { margin-bottom: 4px; }
 :deep(.tiptap table) { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 10.667px 0; }
 :deep(.tiptap td), :deep(.tiptap th) { box-sizing: border-box; border: 1px solid #777; padding: 6.667px; vertical-align: top; overflow-wrap: anywhere; }
-:deep(.tiptap td p:last-child), :deep(.tiptap th p:last-child) { margin-bottom: 0; }
+:deep(.tiptap td p:last-child), :deep(.tiptap th p:last-child),
+:deep(.tiptap td > p:has(+ .column-resize-handle:last-child)),
+:deep(.tiptap th > p:has(+ .column-resize-handle:last-child)) { margin-bottom: 0; }
 :deep(.tiptap figure) { max-width: 100%; margin: 10.667px 0; text-align: center; }
 :deep(.tiptap td figure), :deep(.tiptap th figure) { margin: 5.333px 0; }
 :deep(.tiptap img) { display: block; width: auto; height: auto; max-width: 100%; max-height: 220mm; margin-inline: auto; object-fit: contain; }
@@ -773,6 +926,10 @@ onUnmounted(() => {
   justify-content: center;
   border-radius: 0.25rem;
 }
+.editor-toolbar-main-row .editor-tool {
+  width: 2rem;
+  height: 2rem;
+}
 .editor-tool:hover,
 .editor-tool[aria-pressed='true'] {
   background: var(--color-sage);
@@ -785,10 +942,33 @@ onUnmounted(() => {
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
-.editor-format-summary { list-style: none; }
-.editor-format-summary::-webkit-details-marker { display: none; }
-.editor-format-chevron { transition: transform 180ms ease-in-out; }
-.editor-format-menu[open] .editor-format-chevron { transform: rotate(90deg); }
+.editor-toolbar-summary { list-style: none; }
+.editor-toolbar-summary::-webkit-details-marker { display: none; }
+.editor-toolbar-summary .material-symbols-outlined { font-size: 18px; }
+.editor-toolbar-menu[open] > .editor-toolbar-summary > .material-symbols-outlined:last-child {
+  transform: rotate(180deg);
+}
+.editor-toolbar-summary > .material-symbols-outlined:last-child {
+  transition: transform 180ms ease-in-out;
+}
+.editor-toolbar-divider {
+  width: 1px;
+  height: 1.5rem;
+  flex: 0 0 1px;
+  margin-inline: 0.25rem;
+  background: var(--color-line);
+}
+.editor-toolbar-panel {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  z-index: 30;
+  padding: 0.5rem;
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  background: white;
+  color: var(--color-ink);
+  box-shadow: 0 12px 24px rgb(15 23 42 / 0.14);
+}
 .editor-format-item {
   display: flex;
   width: 100%;
@@ -803,7 +983,7 @@ onUnmounted(() => {
 .editor-format-item[aria-pressed='true'] { background: var(--color-sage); }
 .editor-format-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) {
-  .editor-format-chevron { transition: none; }
+  .editor-toolbar-summary > .material-symbols-outlined:last-child { transition: none; }
 }
 .material-symbols-outlined {
   font-size: 20px;
@@ -815,6 +995,18 @@ onUnmounted(() => {
 :deep(.tiptap ol ol) { list-style-type: lower-alpha; }
 :deep(.tiptap ol ol ol) { list-style-type: lower-roman; }
 :deep(.tiptap .tableWrapper) { max-width: 100%; overflow-x: auto; }
+:deep(.tiptap td), :deep(.tiptap th) { position: relative; }
+:deep(.tiptap .column-resize-handle) {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  bottom: -1px;
+  width: 4px;
+  z-index: 2;
+  background: #3b82f6;
+  pointer-events: none;
+}
+:deep(.tiptap.resize-cursor), :deep(.tiptap.resize-cursor *) { cursor: col-resize !important; }
 :deep(.tiptap td.selectedCell),
 :deep(.tiptap th.selectedCell) { background-color: #eaf1fd; }
 :deep(.tiptap .validation-cell) { outline: 2px solid var(--color-error); outline-offset: -2px; }

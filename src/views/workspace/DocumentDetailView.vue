@@ -41,7 +41,56 @@ const canRead = computed(
 )
 let lastLoad = 0,
   timer: ReturnType<typeof setInterval> | undefined, pollTimer: ReturnType<typeof setTimeout> | undefined, active = true, polls = 0
-const emailStatusLabel = (status: string) => t(({ queued: 'Menunggu pengiriman', sent: 'Dikirim oleh transport', failed: 'Gagal', cancelled: 'Dibatalkan' })[status] ?? status)
+const emailNotificationLabels: Record<string, string> = {
+  revision_requested: 'Permintaan revisi dokumen',
+  invitation_ready: 'Undangan tanda tangan siap dikirim',
+  invitation_waiting: 'Undangan tanda tangan menunggu giliran',
+  version_finalizing: 'Penyusunan PDF final dimulai',
+  version_completed: 'Dokumen selesai ditandatangani',
+  version_rejected: 'Dokumen ditolak',
+}
+const auditActionLabels: Record<string, string> = {
+  'document.created': 'Dokumen dibuat',
+  'version.updated': 'Draft dokumen diperbarui',
+  'version.source_imported': 'Dokumen diimpor',
+  'version.conversion_retried': 'Konversi dokumen dicoba ulang',
+  'version.conversion_ready': 'Dokumen siap diproses',
+  'version.preview_requested': 'Pratinjau dokumen diminta',
+  'version.preview_ready': 'Pratinjau dokumen siap',
+  'version.finalization_retried': 'Penyusunan PDF final dicoba ulang',
+  'version.completed': 'Dokumen selesai ditandatangani',
+  'version.published': 'Dokumen dikirim untuk ditandatangani',
+  'version.signers_updated': 'Daftar penerima diperbarui',
+  'assignment.placeholders_updated': 'Posisi tanda tangan diperbarui',
+  'invitation.claimed': 'Undangan tanda tangan diterima',
+  'invitation.resent': 'Undangan tanda tangan dikirim ulang',
+  'version.revision_requested': 'Dokumen diminta untuk direvisi',
+  'assignment.signed': 'Tanda tangan diterima',
+  'assignment.activated': 'Tahap tanda tangan diaktifkan',
+  'version.finalizing': 'Penyusunan PDF final dimulai',
+  'assignment.read_confirmed': 'Dokumen dikonfirmasi sudah dibaca',
+  'version.rejected': 'Dokumen ditolak',
+}
+const emailNotificationLabel = (type: string) => t(emailNotificationLabels[type] ?? 'Pemberitahuan dokumen')
+const auditActionLabel = (action: string) => t(auditActionLabels[action] ?? 'Aktivitas dokumen')
+const activityIcon = (action: string) => ({
+  'version.revision_requested': 'edit_note',
+  'invitation.claimed': 'mark_email_read',
+  'assignment.activated': 'account_tree',
+  'assignment.signed': 'draw',
+} as Record<string, string>)[action] ?? 'history'
+const emailStatusLabel = (status: string) => t(({
+  queued: 'Menunggu pengiriman',
+  sent: 'Diterima server email',
+  failed: 'Gagal',
+  cancelled: 'Dibatalkan',
+} as Record<string, string>)[status] ?? 'Status belum dikenali')
+const emailStatusTone = (status: string) => ({
+  sent: 'bg-sage text-primary',
+  failed: 'bg-error/5 text-error',
+  queued: 'bg-soft text-muted',
+  cancelled: 'bg-soft text-muted',
+} as Record<string, string>)[status] ?? 'bg-soft text-muted'
 async function load() {
   lastLoad = Date.now()
   const result = await run(() => documentsApi.detail(String(route.params.documentGuid)))
@@ -276,11 +325,13 @@ onUnmounted(() => {
       <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">{{ t('Memuat aktivitas…') }}</p>
       <FeedbackMessage :message="t(activityErrors.audit || '')" error />
       <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">{{ t('Belum ada aktivitas.') }}</p>
-      <div v-for="event in recentAudit" :key="event.guid" class="border-t border-line py-3">
-        <p class="text-sm font-medium">{{ t(event.action) }}</p>
-        <p v-if="event.metadata?.reason" class="mt-1 text-sm">{{ t('Alasan') }}: {{ event.metadata.reason }}</p>
-        <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
-        <p v-if="auditExpanded && event.version_guid" class="mt-1 text-xs text-muted">{{ t('Versi') }} {{ event.version_guid }}</p>
+      <div v-for="event in recentAudit" :key="event.guid" class="flex gap-3 border-t border-line py-4">
+        <span class="material-symbols-outlined mt-0.5 text-lg text-primary" aria-hidden="true">{{ activityIcon(event.action) }}</span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold">{{ auditActionLabel(event.action) }}</p>
+          <p v-if="event.metadata?.reason" class="mt-1 text-sm text-ink">{{ t('Alasan') }}: {{ event.metadata.reason }}</p>
+          <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
+        </div>
       </div>
       <div v-if="auditExpanded && audit && audit.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
         <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
@@ -307,20 +358,52 @@ onUnmounted(() => {
       </div>
     </section>
     <section v-if="owner" class="detail-emails rounded-xl border border-line bg-white p-5 sm:p-8">
-      <h2 class="mb-4 text-xl font-semibold">{{ t('Status email') }}</h2>
-      <p class="mb-3 text-xs text-muted">{{ t('Status sent berarti transport menerima email, bukan bukti email masuk ke inbox.') }}</p>
+      <div class="mb-4">
+        <h2 class="text-xl font-semibold">{{ t('Status email') }}</h2>
+        <p class="mt-1 text-sm text-muted">{{ t('Status pengiriman undangan dan pemberitahuan tanda tangan dokumen.') }}</p>
+      </div>
       <p v-if="activityBusy.emails" role="status" class="text-sm text-muted">{{ t('Memuat status email…') }}</p>
       <FeedbackMessage :message="t(activityErrors.emails || '')" error />
       <p v-if="emails && !emails.data.length && !activityBusy.emails" class="text-sm text-muted">{{ t('Belum ada catatan email.') }}</p>
-      <div v-for="email in emails?.data" :key="email.guid" class="border-t border-line py-3">
-        <p class="text-sm font-medium">{{ t(email.notification_type) }} · {{ emailStatusLabel(email.status) }}</p>
-        <p class="mt-1 text-xs text-muted">{{ email.recipient_email }} · {{ dateLabel(email.sent_at || email.created_at) }} · {{ t('Percobaan :count', { count: formatNumber(email.attempt_count) }) }}</p>
+      <div v-for="email in emails?.data" :key="email.guid" class="flex gap-3 border-t border-line py-4">
+        <span class="material-symbols-outlined mt-0.5 text-lg" :class="email.status === 'failed' ? 'text-error' : 'text-primary'" aria-hidden="true">mail</span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold">{{ emailNotificationLabel(email.notification_type) }}</p>
+          <p class="mt-1 break-all text-sm text-muted">{{ email.recipient_email }} <span aria-hidden="true">&middot;</span> {{ dateLabel(email.sent_at || email.created_at) }}</p>
+          <p class="mt-1 text-xs text-muted">{{ t('Percobaan pengiriman ke-:count', { count: formatNumber(email.attempt_count) }) }}</p>
+          <span class="mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="emailStatusTone(email.status)">
+            {{ emailStatusLabel(email.status) }}
+          </span>
+        </div>
       </div>
-      <div v-if="emails && emails.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page <= 1" @click="loadActivity('emails', emails.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
-        <span>{{ t('Halaman :current dari :last', { current: formatNumber(emails.meta.current_page), last: formatNumber(emails.meta.last_page) }) }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.emails || emails.meta.current_page >= emails.meta.last_page" @click="loadActivity('emails', emails.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
-      </div>
+      <p v-if="emails?.data.length" class="mt-3 text-xs leading-5 text-muted">
+        {{ t('Status ini menunjukkan permintaan diterima layanan email. Email belum tentu masuk ke kotak masuk.') }}
+      </p>
+      <nav
+        v-if="emails && emails.meta.last_page > 1"
+        class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm"
+        :aria-label="t('Halaman status email')"
+      >
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-primary hover:bg-soft focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="activityBusy.emails || emails.meta.current_page <= 1"
+          @click="loadActivity('emails', emails.meta.current_page - 1)"
+        >
+          <span class="material-symbols-outlined text-lg" aria-hidden="true">arrow_back</span>
+          {{ t('Sebelumnya') }}
+        </button>
+        <span class="text-xs font-medium text-muted">{{ formatNumber(emails.meta.current_page) }} / {{ formatNumber(emails.meta.last_page) }}</span>
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-primary hover:bg-soft focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="activityBusy.emails || emails.meta.current_page >= emails.meta.last_page"
+          @click="loadActivity('emails', emails.meta.current_page + 1)"
+        >
+          {{ t('Berikutnya') }}
+          <span class="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
+        </button>
+      </nav>
     </section>
     </div></template
   >

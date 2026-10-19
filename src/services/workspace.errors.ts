@@ -25,6 +25,7 @@ export function workspaceError(error: unknown) {
     OCR_SERVICE_UNAVAILABLE: 'Layanan OCR sedang tidak tersedia. Coba konversi lagi nanti.',
     OCR_QUOTA_EXHAUSTED: 'Kuota OCR sementara tidak tersedia. Impor biasa tidak menemukan teks yang dapat diedit; coba lagi setelah kuota tersedia.',
     PDF_CONVERSION_FAILED: 'PDF belum dapat dikonversi. Periksa berkas dan coba lagi.',
+    SIGNATURE_ASSET_IN_USE: 'Tanda tangan ini sudah digunakan dan tidak dapat dihapus.',
     DOCUMENT_PAGE_LIMIT: 'Jumlah halaman berkas melebihi batas server.',
     EDITOR_PREVIEW_REQUIRED: 'Buat pratinjau terbaru dari isi editor sebelum melanjutkan.',
     VERSION_CONFLICT: 'Versi dokumen berubah. Periksa status terbaru.',

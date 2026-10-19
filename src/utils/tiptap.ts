@@ -19,6 +19,17 @@ const tableColors = ['gray', 'blue', 'green', 'yellow', 'orange', 'red', 'purple
 const tableAlignments = ['left', 'center', 'right', 'justify']
 const verticalAlignments = ['top', 'middle', 'bottom']
 
+export function textAlignment(value: unknown): { align?: string } {
+  if (value == null || value === 'left') return {}
+  if (!tableAlignments.includes(String(value))) throw new Error('Perataan paragraf tidak didukung.')
+  return { align: String(value) }
+}
+
+function alignmentAttribute(value: unknown) {
+  const { align } = textAlignment(value)
+  return align ? ` style="text-align:${align}"` : ''
+}
+
 function blockText(value: unknown) {
   if (typeof value !== 'string') throw new Error('Isi blok dokumen tidak valid.')
   return value
@@ -36,11 +47,11 @@ export function editorDataToHtml(data: EditorData): string {
   return data.blocks.map((block) => {
     const value = block.data
     switch (block.type) {
-      case 'paragraph': return `<p>${blockText(value.text)}</p>`
+      case 'paragraph': return `<p${alignmentAttribute(value.align)}>${blockText(value.text)}</p>`
       case 'header': {
         const level = Number(value.level)
         if (!Number.isInteger(level) || level < 1 || level > 6) throw new Error('Tingkat judul tidak didukung.')
-        return `<h${level}>${blockText(value.text)}</h${level}>`
+        return `<h${level}${alignmentAttribute(value.align)}>${blockText(value.text)}</h${level}>`
       }
       case 'list': return listHtml(value.items as unknown[], value.style === 'ordered' ? 'ol' : 'ul')
       case 'table': {
@@ -242,8 +253,8 @@ export function tiptapToEditorData(doc: TiptapNode): EditorData {
     return { blocks: [] }
   return { blocks: nodes.map((node) => {
     switch (node.type) {
-      case 'paragraph': return { type: 'paragraph', data: { text: inlineHtml(node.content) } }
-      case 'heading': return { type: 'header', data: { text: inlineHtml(node.content), level: Number(node.attrs?.level) || 2 } }
+      case 'paragraph': return { type: 'paragraph', data: { text: inlineHtml(node.content), ...textAlignment(node.attrs?.textAlign) } }
+      case 'heading': return { type: 'header', data: { text: inlineHtml(node.content), level: Number(node.attrs?.level) || 2, ...textAlignment(node.attrs?.textAlign) } }
       case 'bulletList':
       case 'orderedList': return { type: 'list', data: { style: node.type === 'orderedList' ? 'ordered' : 'unordered', items: listItems(node) } }
       case 'table': return { type: 'table', data: tableData(node) }
