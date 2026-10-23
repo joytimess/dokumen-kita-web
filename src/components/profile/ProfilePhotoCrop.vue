@@ -7,7 +7,7 @@ import { t } from '../../services/workspace-language'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import BaseButton from '../ui/BaseButton.vue'
 
-const props = defineProps<{ src: string; busy: boolean; error: string }>()
+const props = defineProps<{ src: string; filename?: string; busy: boolean; error: string }>()
 const emit = defineEmits<{ close: []; save: [file: File] }>()
 const dialog = ref<HTMLDialogElement>()
 const image = ref<HTMLImageElement>()
@@ -69,6 +69,7 @@ onUnmounted(() => {
 <template>
   <dialog ref="dialog" aria-labelledby="photo-crop-title" :aria-busy="busy || exporting" class="photo-crop-dialog fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-line bg-white p-5 text-ink shadow-2xl" @cancel.prevent="close" @click="($event.target === dialog) && close()">
     <h2 id="photo-crop-title" class="text-xl font-semibold">{{ t('Sesuaikan foto profil') }}</h2>
+    <p v-if="filename" class="mt-2 text-xs text-muted wrap-anywhere">{{ filename }}</p>
     <p class="my-3 text-sm text-muted">{{ t('Geser foto dan atur zoom untuk menyesuaikan avatar.') }}</p>
     <fieldset :disabled="busy || exporting" class="min-w-0" :class="{ 'pointer-events-none': busy || exporting }">
       <div class="crop-stage h-[min(55dvh,22rem)] overflow-hidden rounded-xl bg-ink" role="img" :aria-label="t('Area potong foto profil')">

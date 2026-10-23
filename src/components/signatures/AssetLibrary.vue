@@ -364,7 +364,7 @@ onUnmounted(() => {
         tabindex="0"
         class="min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
-        <SignatureCanvas @created="choose($event, 'drawn')" />
+        <SignatureCanvas :active="mode === 'drawn'" :disabled="busy || disabled" @created="choose($event, 'drawn')" />
       </div>
       <div
         id="signature-panel-upload"

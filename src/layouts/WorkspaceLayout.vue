@@ -104,7 +104,7 @@ onUnmounted(() => document.removeEventListener('keydown', keydown))
       <div class="min-h-dvh transition-[padding] duration-200 motion-reduce:transition-none" :class="collapsed ? 'lg:pl-[72px]' : 'lg:pl-72'">
         <div :inert="mobileOpen || undefined">
           <WorkspaceHeader :key="auth.user.guid" ref="header" @toggle-sidebar="toggleSidebar" />
-          <main id="main" class="mx-auto min-w-0 max-w-[1440px] p-4 sm:p-8">
+          <main id="main" class="mx-auto min-w-0 max-w-[1440px]" :class="route.path === '/profile' ? 'p-6' : 'p-4 sm:p-8'">
             <RouterView v-slot="{ Component }">
               <component :is="Component" v-if="Component" :key="auth.user.guid" />
             </RouterView>
