@@ -3,6 +3,7 @@ import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import AccountAvatar from '../profile/AccountAvatar.vue'
 import { useAuthStore } from '../../stores/auth'
 import { notificationsApi } from '../../services/notifications.service'
 import { notify } from '../../services/feedback'
@@ -200,10 +201,10 @@ onUnmounted(() => {
         aria-controls="workspace-profile"
         @click="openMenu('profile', $event)"
       >
-        <span class="grid size-9 shrink-0 place-items-center rounded-full bg-sage text-sm font-semibold text-primary">
+        <AccountAvatar class="size-9 text-sm">
           <span v-if="initials">{{ initials }}</span>
           <span v-else class="material-symbols-outlined" aria-hidden="true">person</span>
-        </span>
+        </AccountAvatar>
         <span class="material-symbols-outlined hidden text-muted sm:block" aria-hidden="true">expand_more</span>
       </button>
 
@@ -265,10 +266,10 @@ onUnmounted(() => {
         :aria-label="t('Profil akun')"
       >
         <div class="flex min-w-0 items-center gap-3 border-b border-line pb-4">
-          <span class="grid size-12 shrink-0 place-items-center rounded-full bg-sage font-semibold text-primary">
+          <AccountAvatar class="size-12">
             <span v-if="initials">{{ initials }}</span>
             <span v-else class="material-symbols-outlined" aria-hidden="true">person</span>
-          </span>
+          </AccountAvatar>
           <span class="min-w-0">
             <span class="block font-semibold wrap-anywhere">{{ auth.user?.name }}</span>
             <span class="block text-sm text-muted wrap-anywhere">{{ auth.user?.email }}</span>

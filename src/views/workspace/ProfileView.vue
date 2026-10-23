@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
+import { validProfilePhoto } from '../../utils/profilePhoto'
 import { useAuthStore } from '../../stores/auth'
 import { accountApi } from '../../services/account.service'
 import { authMode } from '../../services/http'
@@ -10,6 +11,7 @@ import { t } from '../../services/workspace-language'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
 import FormField from '../../components/ui/FormField.vue'
 import PasswordField from '../../components/ui/PasswordField.vue'
+import ProfilePhotoCrop from '../../components/profile/ProfilePhotoCrop.vue'
 
 const auth = useAuthStore()
 const user = computed(() => auth.user)
@@ -17,7 +19,6 @@ const capabilities = computed(() => auth.user?.capabilities)
 const name = ref(auth.user?.name ?? '')
 const nameError = ref('')
 const nameBusy = ref(false)
-const photoFile = ref<File>()
 const photoPreview = ref('')
 const photoUrl = ref('')
 const photoInput = ref<HTMLInputElement>()
@@ -88,42 +89,20 @@ async function loadPhoto() {
 function checkPhoto(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  if (!file) return
+  input.value = ''
+  if (!file || photoBusy.value) return
   photoError.value = ''
-  if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
-  photoPreview.value = ''
-  photoFile.value = undefined
-  const allowed = ['image/jpeg', 'image/png', 'image/webp']
-  if (!allowed.includes(file.type) || file.size > 2 * 1024 * 1024) {
-    photoError.value = t('Pilih JPG, PNG, atau WebP maksimal 2 MB.')
-    input.value = ''
+  if (!validProfilePhoto(file)) {
+    photoError.value = t('Pilih JPG, PNG, atau WebP maksimal 8 MB.')
     return
   }
-  const preview = URL.createObjectURL(file)
-  const image = new Image()
-  image.onload = () => {
-    if (image.width > 2048 || image.height > 1024 || image.width < 1 || image.height < 1) {
-      URL.revokeObjectURL(preview)
-      photoError.value = t('Dimensi foto maksimal 2048 × 1024 piksel.')
-      input.value = ''
-      return
-    }
-    if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
-    photoPreview.value = preview
-    photoFile.value = file
-  }
-  image.onerror = () => {
-    URL.revokeObjectURL(preview)
-    photoError.value = t('Berkas bukan gambar yang dapat dibaca.')
-    input.value = ''
-  }
-  image.src = preview
+  clearPhotoSelection()
+  photoPreview.value = URL.createObjectURL(file)
 }
 
 function clearPhotoSelection() {
   if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
   photoPreview.value = ''
-  photoFile.value = undefined
   if (photoInput.value) photoInput.value.value = ''
 }
 
@@ -142,21 +121,18 @@ async function saveName() {
   }
 }
 
-async function uploadPhoto() {
-  if (!photoFile.value || photoBusy.value) return
+async function uploadPhoto(file: File) {
+  if (photoBusy.value) return
   photoBusy.value = true
   photoError.value = ''
   try {
-    applyUser(await accountApi.uploadPhoto(photoFile.value))
+    applyUser(await accountApi.uploadPhoto(file))
     clearPhotoSelection()
     await loadPhoto()
     notify.success(t('Foto profil berhasil diperbarui.'))
   } catch (cause) {
     photoError.value = t(workspaceError(cause).fields.photo || workspaceError(cause).message)
     expireSession(cause)
-    clearPhotoSelection()
-    await auth.refresh()
-    await loadPhoto()
   } finally {
     photoBusy.value = false
   }
@@ -261,21 +237,18 @@ onUnmounted(() => {
       <p class="mt-2 text-sm text-muted">{{ t('Metode masuk') }}: <span v-if="user?.login_methods?.length">{{ user.login_methods.map((method) => method === 'google' ? 'Google' : t('Email & Kata Sandi')).join(', ') }}</span><span v-else>{{ t('Belum tersedia') }}</span></p>
       <div class="mt-5 flex flex-wrap items-center gap-4 border-y border-line py-5">
         <span class="grid size-20 shrink-0 place-items-center overflow-hidden rounded-full bg-sage text-xl font-semibold text-primary">
-          <img v-if="photoPreview || photoUrl" :src="photoPreview || photoUrl" :alt="t('Foto profil')" class="size-full object-cover" />
+          <img v-if="photoUrl" :src="photoUrl" :alt="t('Foto profil')" class="size-full object-cover" />
           <span v-else>{{ initials }}</span>
         </span>
         <div class="min-w-0 flex-1">
           <label for="profile-photo" class="mb-2 block text-xs font-semibold">{{ t('Foto profil') }}</label>
           <input id="profile-photo" ref="photoInput" type="file" accept="image/jpeg,image/png,image/webp" class="block w-full text-sm text-muted file:mr-3 file:min-h-10 file:rounded-lg file:border-0 file:bg-sage file:px-3 file:text-sm file:font-semibold file:text-primary" :disabled="!capabilities?.can_change_photo || photoBusy" @change="checkPhoto" />
-          <p class="mt-2 text-xs text-muted">{{ t('JPG, PNG, atau WebP · Maks. 2 MB · 2048 × 1024 piksel') }}</p>
+          <p class="mt-2 text-xs text-muted">{{ t('JPG, PNG, atau WebP · Maks. 8 MB') }}</p>
         </div>
       </div>
       <FeedbackMessage :message="t(photoError)" error />
-      <div v-if="photoFile" class="mt-3 flex flex-wrap gap-2">
-        <button type="button" class="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" :disabled="photoBusy" @click="uploadPhoto">{{ photoBusy ? t('Mengunggah…') : t('Simpan foto') }}</button>
-        <button type="button" class="min-h-10 rounded-lg border border-line px-4 text-sm disabled:cursor-not-allowed disabled:opacity-50" :disabled="photoBusy" @click="clearPhotoSelection">{{ t('Batal') }}</button>
-      </div>
-      <button v-else-if="user?.photo_url && capabilities?.can_change_photo" type="button" class="mt-3 min-h-10 text-sm font-semibold text-error underline disabled:cursor-not-allowed disabled:opacity-50" :disabled="photoBusy" @click="deletePhoto">{{ t('Hapus foto') }}</button>
+      <ProfilePhotoCrop v-if="photoPreview" :src="photoPreview" :busy="photoBusy" :error="photoError" @save="uploadPhoto" @close="clearPhotoSelection" />
+      <button v-if="user?.photo_url && capabilities?.can_change_photo" type="button" class="mt-3 min-h-10 text-sm font-semibold text-error underline disabled:cursor-not-allowed disabled:opacity-50" :disabled="photoBusy" @click="deletePhoto">{{ t('Hapus foto') }}</button>
 
       <form class="mt-6 border-t border-line pt-5" @submit.prevent="saveName">
         <FormField id="profile-name" v-model="name" :label="t('Nama')" :maxlength="255" :error="nameError" :disabled="!capabilities?.can_change_name || nameBusy" />
