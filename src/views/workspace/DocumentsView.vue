@@ -14,16 +14,20 @@ import StatusBadge from '../../components/documents/StatusBadge.vue'
 import CreateDocumentButton from '../../components/documents/CreateDocumentButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
 import SelectControl from '../../components/ui/SelectControl.vue'
+import BaseButton from '../../components/ui/BaseButton.vue'
 import { formatNumber, language, t } from '../../services/workspace-language'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const summary = computed(() => route.path === '/dashboard')
+const createDocument = ref<InstanceType<typeof CreateDocumentButton>>()
+const filterMenu = ref<HTMLDetailsElement>()
 const page = ref<Page<DocumentRecord>>()
 const status = ref('')
 const visibility = ref<'active' | 'hidden'>('active')
 const perPage = ref(10)
+const dashboardPage = ref(1)
 const query = ref('')
 const categoryFilter = ref('')
 const sort = ref<'created' | 'title'>('created')
@@ -45,8 +49,9 @@ const bulkBusy = ref(false)
 let listRequest = 0
 let countRequest = 0
 let active = true
+let loadedPath = ''
 let queryTimer: ReturnType<typeof setTimeout> | undefined
-const statuses = ['draft', 'in_progress', 'completed', 'finalizing']
+const statuses = ['draft', 'in_progress', 'completed']
 const categoryFilterOptions = computed(() => [
   { value: '', label: t('Semua kategori') },
   { value: '__uncategorized', label: t('Tanpa kategori') },
@@ -91,33 +96,61 @@ const emptyDescription = computed(() =>
       ? t('Coba ubah atau hapus filter yang dipilih.')
       : t('Draft yang Anda buat akan tampil di sini.'),
 )
-const tabs = computed(() => [
-  { id: '', label: t('Semua'), total: counts.value.all },
-  { id: 'draft', label: t('Draft'), total: counts.value.draft },
-  { id: 'in_progress', label: t('Dalam proses'), total: counts.value.in_progress },
-  { id: 'completed', label: t('Selesai'), total: counts.value.completed },
-])
 const stats = computed(() => [
-  { status: 'draft', label: t('Draft'), detail: t('Dokumen draft milik Anda.'), icon: 'edit_document' },
-  { status: 'in_progress', label: t('Dalam proses'), detail: t('Dokumen yang sedang dalam proses tanda tangan.'), icon: 'draw' },
-  { status: 'completed', label: t('Selesai'), detail: t('Dokumen yang selesai diproses.'), icon: 'task_alt' },
-  { status: 'finalizing', label: t('Finalisasi'), detail: t('Dokumen sedang menyiapkan hasil final.'), icon: 'hourglass_top' },
+  { status: '', key: 'all', label: t('Total Dokumen'), icon: 'description' },
+  { status: 'draft', key: 'draft', label: t('Draft'), icon: 'edit_document' },
+  { status: 'in_progress', key: 'in_progress', label: t('Dalam Proses'), icon: 'draw' },
+  { status: 'completed', key: 'completed', label: t('Selesai'), icon: 'task_alt' },
 ])
+const dashboardFilterCount = computed(() =>
+  Number(!!status.value) + Number(visibility.value === 'hidden') + Number(!!categoryFilter.value),
+)
+const hasDashboardFilters = computed(() => hasSearchFilters.value || visibility.value === 'hidden')
+
+function resetDashboardFilters() {
+  query.value = ''
+  status.value = ''
+  categoryFilter.value = ''
+  visibility.value = 'active'
+  sort.value = 'created'
+  filtersChanged()
+}
+
+function closeFilters(focus = false) {
+  if (!filterMenu.value?.open) return
+  filterMenu.value.open = false
+  if (focus) filterMenu.value.querySelector('summary')?.focus()
+}
+
+function outsideFilters(event: PointerEvent) {
+  if (!filterMenu.value?.contains(event.target as Node)) closeFilters()
+}
 
 function queryValue(key: string) {
   const value = route.query[key]
   return typeof value === 'string' ? value : ''
 }
 
+function currentPageNumber() {
+  return summary.value ? dashboardPage.value : Math.max(1, Number(queryValue('page')) || 1)
+}
+
+function loadDashboard(number = 1) {
+  dashboardPage.value = number
+  selectedGuids.value = []
+  actionError.value = ''
+  void loadList(number)
+}
+
 async function loadList(number = 1) {
   const request = ++listRequest
   const identity = auth.user?.guid
-  const queryText = queryValue('q')
-  const statusFilter = queryValue('status')
-  const visibilityFilter = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
-  const categoryGuid = queryValue('category_guid')
-  const uncategorized = queryValue('uncategorized') === '1'
-  const perPageFilter = Number(queryValue('per_page')) || 10
+  const queryText = summary.value ? query.value.trim() : queryValue('q')
+  const statusFilter = summary.value ? status.value : queryValue('status')
+  const visibilityFilter = visibility.value
+  const categoryGuid = summary.value ? (categoryFilter.value === '__uncategorized' ? '' : categoryFilter.value) : queryValue('category_guid')
+  const uncategorized = summary.value ? categoryFilter.value === '__uncategorized' : queryValue('uncategorized') === '1'
+  const perPageFilter = summary.value ? perPage.value : Number(queryValue('per_page')) || 10
   listLoading.value = true
   pageMatchesFilters.value = false
   listError.value = ''
@@ -135,6 +168,11 @@ async function loadList(number = 1) {
     if (!active || request !== listRequest || auth.user?.guid !== identity) return
     const lastPage = Math.max(1, result.meta.last_page)
     if (number > lastPage) {
+      if (summary.value) {
+        dashboardPage.value = lastPage
+        await loadList(lastPage)
+        return
+      }
       await router.replace({ query: { ...route.query, page: lastPage > 1 ? String(lastPage) : undefined } })
       return
     }
@@ -166,7 +204,7 @@ async function loadCategories() {
 async function loadCounts() {
   const request = ++countRequest
   const identity = auth.user?.guid
-  const visibilityFilter = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
+  const visibilityFilter = visibility.value
   countsLoading.value = true
   countError.value = false
   counts.value = {}
@@ -187,12 +225,20 @@ async function loadCounts() {
 function queryChanged() {
   clearTimeout(queryTimer)
   queryTimer = setTimeout(() => {
+    if (summary.value) {
+      loadDashboard()
+      return
+    }
     void router.replace({ query: { ...route.query, q: query.value.trim() || undefined, page: undefined } })
   }, 400)
 }
 
 function filtersChanged() {
   clearTimeout(queryTimer)
+  if (summary.value) {
+    loadDashboard()
+    return
+  }
   const categoryGuid = categoryFilter.value !== '__uncategorized' ? categoryFilter.value : ''
   void router.replace({ query: {
     ...route.query,
@@ -234,7 +280,7 @@ async function changeVisibility(document: DocumentRecord) {
     await documentsApi.setVisibility(document.guid, !document.is_hidden)
     if (!active || auth.user?.guid !== identity) return
     notify.success(t(document.is_hidden ? 'Dokumen dikembalikan ke daftar aktif.' : 'Dokumen disembunyikan dari daftar aktif.'))
-    await loadList(Math.max(1, Number(queryValue('page')) || 1))
+    await loadList(currentPageNumber())
     if (summary.value) await loadCounts()
   } catch (cause) {
     if (!active || auth.user?.guid !== identity) return
@@ -242,7 +288,7 @@ async function changeVisibility(document: DocumentRecord) {
     actionError.value = t(feedback.message)
     if (feedback.status === 401) auth.user = null
     if ([403, 404].includes(feedback.status ?? 0))
-      await loadList(Math.max(1, Number(queryValue('page')) || 1))
+      await loadList(currentPageNumber())
   } finally {
     if (active) visibilityBusy.value = ''
   }
@@ -250,11 +296,15 @@ async function changeVisibility(document: DocumentRecord) {
 
 function pageTo(number: number) {
   clearTimeout(queryTimer)
+  if (summary.value) {
+    loadDashboard(number)
+    return
+  }
   void router.replace({ query: { ...route.query, q: query.value.trim() || undefined, page: number > 1 ? String(number) : undefined } })
 }
 
 function retryList() {
-  void loadList(Math.max(1, Number(queryValue('page')) || 1))
+  void loadList(currentPageNumber())
 }
 
 function toggleSelection(guid: string, selected: boolean) {
@@ -311,40 +361,52 @@ async function download(document: DocumentRecord) {
 }
 
 watch(() => route.fullPath, () => {
+  if (summary.value && loadedPath === route.path) return
+  loadedPath = route.path
   clearTimeout(queryTimer)
-  query.value = queryValue('q')
-  status.value = queryValue('status')
-  visibility.value = queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
-  categoryFilter.value = queryValue('uncategorized') === '1' ? '__uncategorized' : queryValue('category_guid')
-  perPage.value = [10, 25, 50].includes(Number(queryValue('per_page'))) ? Number(queryValue('per_page')) : 10
+  query.value = summary.value ? '' : queryValue('q')
+  status.value = summary.value ? '' : queryValue('status')
+  visibility.value = !summary.value && queryValue('visibility') === 'hidden' ? 'hidden' : 'active'
+  categoryFilter.value = summary.value ? '' : queryValue('uncategorized') === '1' ? '__uncategorized' : queryValue('category_guid')
+  perPage.value = !summary.value && [10, 25, 50].includes(Number(queryValue('per_page'))) ? Number(queryValue('per_page')) : 10
   selectedGuids.value = []
   actionError.value = ''
-  const number = Math.max(1, Number(queryValue('page')) || 1)
+  if (summary.value) {
+    const remainingQuery = { ...route.query }
+    for (const key of ['q', 'status', 'visibility', 'category_guid', 'uncategorized', 'per_page', 'page']) delete remainingQuery[key]
+    if (Object.keys(remainingQuery).length !== Object.keys(route.query).length)
+      void router.replace({ query: remainingQuery })
+    dashboardPage.value = 1
+  }
+  const number = currentPageNumber()
   void loadList(number)
 }, { immediate: true })
-watch([() => route.path, () => queryValue('visibility')], ([path]) => {
+watch([() => route.path, visibility], ([path]) => {
   if (path === '/dashboard') void loadCounts()
 }, { immediate: true })
 
 onMounted(() => {
   void loadCategories()
+  window.document.addEventListener('pointerdown', outsideFilters)
 })
 onUnmounted(() => {
   active = false
   clearTimeout(queryTimer)
   listRequest++
   countRequest++
+  window.document.removeEventListener('pointerdown', outsideFilters)
 })
 </script>
 
 <template>
-  <div v-if="summary" class="mb-8 flex flex-wrap items-end justify-between gap-5">
+  <div v-if="summary" class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div class="min-w-0">
-      <p class="mb-2 text-xs font-semibold tracking-[0.16em] text-primary">{{ t('Ruang dokumen Anda') }}</p>
-      <h1 class="text-3xl font-semibold sm:text-[32px]">{{ t('Selamat datang, :name.', { name: auth.user?.name ?? '' }) }}</h1>
-      <p class="mt-3 max-w-2xl text-sm text-muted">{{ t('Lanjutkan dokumen terbaru Anda atau mulai satu draft baru.') }}</p>
+      <h1 class="text-3xl font-semibold text-ink">{{ t('Dashboard') }}</h1>
+      <p class="mt-2 text-sm text-muted">{{ t('Kelola dan pantau aktivitas dokumen Anda.') }}</p>
     </div>
-    <CreateDocumentButton />
+    <div class="w-full sm:w-auto [&>button]:w-full">
+      <CreateDocumentButton ref="createDocument">+ {{ t('Buat Dokumen') }}</CreateDocumentButton>
+    </div>
   </div>
   <div v-else class="mb-7 flex flex-wrap items-end justify-between gap-4">
     <div>
@@ -355,25 +417,24 @@ onUnmounted(() => {
     <CreateDocumentButton />
   </div>
 
-  <section v-if="summary" :aria-label="t('Ringkasan dokumen')" class="mb-8">
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <section v-if="summary" :aria-label="t('Ringkasan dokumen')" class="mb-6">
+    <div class="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4 sm:gap-4">
       <button
         v-for="stat in stats"
         :key="stat.status"
         type="button"
-        class="min-h-36 rounded-2xl border border-line bg-white p-5 text-left shadow-[0_2px_10px_rgba(20,28,48,0.035)] transition-colors hover:border-primary/50 hover:bg-[#fcfdfc]"
+        class="min-w-0 rounded-2xl border border-line bg-white p-4 text-left transition-colors hover:border-primary/50 hover:bg-soft/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:p-5"
         :class="status === stat.status && 'border-primary ring-1 ring-primary/20'"
         :aria-pressed="status === stat.status"
         @click="chooseStatus(stat.status)"
       >
-        <span class="flex items-center justify-between text-sm font-semibold text-muted">
+        <span class="flex items-center justify-between gap-2 text-sm font-medium text-muted">
           {{ stat.label }}
           <span class="material-symbols-outlined text-[20px] text-primary" aria-hidden="true">{{ stat.icon }}</span>
         </span>
-        <strong v-if="counts[stat.status] !== undefined" class="mt-3 block text-3xl font-semibold text-ink">{{ numberLabel(counts[stat.status]!) }}</strong>
+        <strong v-if="counts[stat.key] !== undefined" class="mt-4 block text-3xl font-semibold text-ink">{{ numberLabel(counts[stat.key]!) }}</strong>
         <span v-else-if="countsLoading" class="mt-4 block h-7 w-20 animate-pulse rounded bg-sage motion-reduce:animate-none" :aria-label="t('Memuat statistik')"></span>
         <span v-else class="mt-3 block text-sm font-medium text-error">{{ t('Belum tersedia') }}</span>
-        <span class="mt-1 block text-xs leading-5 text-muted">{{ stat.detail }}</span>
       </button>
     </div>
     <div v-if="countError" class="mt-3 flex items-center justify-between gap-4 text-sm text-muted">
@@ -382,26 +443,59 @@ onUnmounted(() => {
     </div>
   </section>
 
-  <section class="rounded-2xl border border-line bg-white p-4 shadow-[0_2px_10px_rgba(20,28,48,0.035)] sm:p-6">
+  <section class="min-w-0 rounded-2xl border border-line bg-white p-4 sm:p-6" :class="!summary && 'shadow-[0_2px_10px_rgba(20,28,48,0.035)]'">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div>
-        <h2 class="text-xl font-semibold">{{ visibility === 'hidden' ? t('Dokumen disembunyikan') : summary ? t('Dokumen terbaru') : t('Daftar dokumen') }}</h2>
+        <h2 class="text-xl font-semibold">{{ summary ? t('Dokumen terbaru') : visibility === 'hidden' ? t('Dokumen disembunyikan') : t('Daftar dokumen') }}</h2>
         <p v-if="!summary" class="mt-2 text-sm text-muted">{{ t('Kelola dan temukan dokumen kamu dengan mudah.') }}</p>
-      </div>
-      <div v-if="summary" role="group" :aria-label="t('Filter dokumen')" class="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-soft p-1">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id || 'all'"
-          type="button"
-          class="min-h-10 shrink-0 rounded-lg px-3 text-xs font-semibold sm:text-sm"
-          :class="status === tab.id ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-ink'"
-          :aria-pressed="status === tab.id"
-          @click="chooseStatus(tab.id)"
-        >{{ tab.label }}<span v-if="tab.total !== undefined" class="ml-1.5 text-muted">{{ numberLabel(tab.total) }}</span><span v-else-if="countsLoading" class="ml-1.5">…</span></button>
       </div>
     </div>
 
-    <div class="mb-5 grid gap-3 sm:grid-cols-2 sm:items-end" :class="summary ? 'xl:grid-cols-5' : '[&_.select-control-value]:bg-transparent [&_.select-control-value]:p-0 [&_.select-control-trigger]:rounded-xl [&_.select-control-trigger]:px-3'">
+    <div v-if="summary" class="mb-3 flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center">
+      <label class="relative flex min-w-0 flex-1 items-center">
+        <span class="sr-only">{{ t('Cari judul dokumen') }}</span>
+        <span class="material-symbols-outlined pointer-events-none absolute left-3 text-[20px] text-muted" aria-hidden="true">search</span>
+        <input v-model="query" type="search" maxlength="200" class="min-h-11 w-full min-w-0 rounded-xl border border-line bg-white pl-10 pr-3 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15" :placeholder="t('Cari judul dokumen...')" @input="queryChanged" />
+      </label>
+      <div class="flex min-w-0 flex-wrap items-center gap-2 xl:shrink-0">
+        <details ref="filterMenu" class="relative" @keydown.esc.prevent.stop="closeFilters(true)">
+          <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-line px-4 text-sm font-medium text-ink hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden" :aria-label="t('Filter dokumen')" aria-controls="dashboard-filters">
+            <span class="material-symbols-outlined text-[20px] text-muted" aria-hidden="true">filter_list</span>
+            {{ t('Filter') }}
+            <span v-if="dashboardFilterCount" class="rounded-full bg-sage px-2 py-0.5 text-xs text-primary">{{ numberLabel(dashboardFilterCount) }}</span>
+          </summary>
+          <div id="dashboard-filters" class="absolute left-0 top-full z-30 mt-2 grid max-h-[70dvh] w-[min(20rem,calc(100vw-3rem))] gap-4 overflow-y-auto rounded-xl border border-line bg-white p-4 shadow-lg xl:left-auto xl:right-0" role="group" :aria-label="t('Filter dokumen')">
+            <div class="grid gap-2 text-xs font-medium text-muted">
+              {{ t('Visibilitas') }}
+              <SelectControl v-model="visibility" floating :ariaLabel="t('Visibilitas')" class="min-h-11 w-full text-sm" :options="visibilityOptions" @change="filtersChanged" />
+            </div>
+            <div class="grid gap-2 text-xs font-medium text-muted">
+              {{ t('Status') }}
+              <SelectControl v-model="status" floating :ariaLabel="t('Status')" class="min-h-11 w-full text-sm" :options="[
+                { value: '', label: t('Semua status') },
+                { value: 'draft', label: t('Draft') },
+                { value: 'in_progress', label: t('Dalam proses') },
+                { value: 'finalizing', label: t('Finalisasi') },
+                { value: 'completed', label: t('Selesai') },
+              ]" @change="filtersChanged" />
+            </div>
+            <div class="grid gap-2 text-xs font-medium text-muted">
+              {{ t('Kategori') }}
+              <SelectControl v-model="categoryFilter" floating :ariaLabel="t('Kategori')" class="min-h-11 w-full text-sm" :options="categoryFilterOptions" @change="filtersChanged" />
+            </div>
+            <button type="button" class="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary hover:bg-soft" @click="resetDashboardFilters">{{ t('Reset filter') }}</button>
+          </div>
+        </details>
+        <div class="min-w-0 flex-1 xl:w-56 xl:flex-none">
+          <SelectControl v-model="sort" :ariaLabel="t('Urutkan')" class="min-h-11 w-full text-sm" :options="[
+            { value: 'created', label: t('Terbaru dibuat') },
+            { value: 'title', label: t('Judul A–Z pada halaman ini') },
+          ]" />
+        </div>
+        <button v-if="query" type="button" class="min-h-11 rounded-lg px-2 text-sm font-medium text-primary underline" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
+      </div>
+    </div>
+    <div v-else class="mb-5 grid gap-3 sm:grid-cols-2 sm:items-end" :class="summary ? 'xl:grid-cols-5' : '[&_.select-control-value]:bg-transparent [&_.select-control-value]:p-0 [&_.select-control-trigger]:rounded-xl [&_.select-control-trigger]:px-3'">
       <label class="grid min-w-0 gap-2 text-xs font-medium text-muted" :class="!summary && 'sm:col-span-2'">
         {{ t(summary ? 'Cari judul dokumen' : 'Cari dokumen') }}
         <span class="relative flex min-w-0 gap-2">
@@ -467,6 +561,13 @@ onUnmounted(() => {
     <button v-if="listError" type="button" class="mb-4 min-h-11 text-sm font-semibold text-primary underline" @click="retryList">{{ t('Coba lagi') }}</button>
     <p v-if="listError && page && !pageMatchesFilters" class="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-900">{{ t('Pencarian atau filter baru gagal dimuat. Data sebelumnya tetap disimpan; belum ada hasil baru untuk ditampilkan.') }}</p>
     <p v-if="listLoading" role="status" class="py-10 text-center text-sm text-muted">{{ t('Memuat dokumen…') }}</p>
+    <div v-else-if="summary && page && pageMatchesFilters && !page.meta.total" class="flex flex-col items-center px-2 py-12 text-center sm:py-16">
+      <span class="mb-5 grid size-14 place-items-center rounded-2xl bg-soft text-primary"><span class="material-symbols-outlined text-[28px]" aria-hidden="true">{{ hasDashboardFilters ? 'search_off' : 'description' }}</span></span>
+      <h3 class="text-lg font-semibold text-ink">{{ t(hasDashboardFilters ? 'Tidak ada dokumen yang cocok' : 'Belum ada dokumen') }}</h3>
+      <p class="mt-2 max-w-sm text-sm leading-6 text-muted">{{ t(hasDashboardFilters ? 'Coba ubah kata kunci atau filter pencarian.' : 'Mulai dengan membuat dokumen pertama Anda.') }}</p>
+      <button v-if="hasDashboardFilters" type="button" class="mt-6 min-h-11 rounded-lg border border-primary px-5 text-sm font-semibold text-primary hover:bg-soft" @click="resetDashboardFilters">{{ t('Reset filter') }}</button>
+      <BaseButton v-else class="mt-6 w-full sm:w-auto" @click="createDocument?.open()">+ {{ t('Buat Dokumen') }}</BaseButton>
+    </div>
     <div v-else-if="page && pageMatchesFilters && !page.meta.total" class="rounded-xl border border-dashed border-line bg-soft/60 px-6 py-12 text-center">
       <h3 class="text-lg font-semibold">{{ emptyTitle }}</h3>
       <p class="mt-2 text-sm text-muted">{{ emptyDescription }}</p>
@@ -509,7 +610,7 @@ onUnmounted(() => {
       </article>
     </div>
 
-    <nav v-if="page && pageMatchesFilters" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
+    <nav v-if="page && pageMatchesFilters && (!summary || page.meta.total > 0)" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman dokumen')">
       <div class="flex items-center gap-2 text-xs font-medium text-muted">
         {{ t('Tampilkan baris') }}
         <SelectControl
@@ -535,9 +636,4 @@ onUnmounted(() => {
       </div>
     </nav>
   </section>
-
-  <p v-if="summary" class="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-    <span>{{ t('Dokumen milik akun aktif') }}</span>
-    <RouterLink to="/documents" class="font-semibold text-primary underline">{{ t('Buka Dokumen Saya') }} →</RouterLink>
-  </p>
 </template>

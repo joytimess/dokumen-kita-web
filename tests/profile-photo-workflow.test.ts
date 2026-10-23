@@ -5,14 +5,14 @@ import { AxiosError } from 'axios'
 import type { User } from '../src/types/auth'
 import InteractionHost from '../src/components/ui/InteractionHost.vue'
 import { confirmation, finishConfirmation, notice, notify } from '../src/services/feedback'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, disposePinia, setActivePinia, type Pinia } from 'pinia'
 import ProfileView from '../src/views/workspace/ProfileView.vue'
 import { useAuthStore } from '../src/stores/auth'
 import { language } from '../src/services/workspace-language'
 
-const mocks = vi.hoisted(() => ({ upload: vi.fn(), updateName: vi.fn(), deletePhoto: vi.fn(), requestEmailChange: vi.fn(), changePassword: vi.fn(), destroy: vi.fn(), options: {} as { ready?: () => void }, export: vi.fn() }))
+const mocks = vi.hoisted(() => ({ photo: vi.fn(), upload: vi.fn(), updateName: vi.fn(), deletePhoto: vi.fn(), requestEmailChange: vi.fn(), changePassword: vi.fn(), destroy: vi.fn(), options: {} as { ready?: () => void }, export: vi.fn() }))
 vi.mock('../src/services/http', () => ({ authMode: 'api' }))
-vi.mock('../src/services/account.service', () => ({ accountApi: { uploadPhoto: mocks.upload, updateName: mocks.updateName, deletePhoto: mocks.deletePhoto, requestEmailChange: mocks.requestEmailChange, changePassword: mocks.changePassword } }))
+vi.mock('../src/services/account.service', () => ({ accountApi: { photo: mocks.photo, uploadPhoto: mocks.upload, updateName: mocks.updateName, deletePhoto: mocks.deletePhoto, requestEmailChange: mocks.requestEmailChange, changePassword: mocks.changePassword } }))
 vi.mock('../src/utils/profilePhoto', async (original) => ({ ...await original<typeof import('../src/utils/profilePhoto')>(), exportProfilePhoto: mocks.export }))
 vi.mock('cropperjs', () => ({ default: class {
   constructor(_image: unknown, options: typeof mocks.options) { mocks.options = options }
@@ -23,11 +23,12 @@ vi.mock('cropperjs', () => ({ default: class {
 let app: App | undefined
 let host: HTMLDivElement
 let feedbackApp: App | undefined
+let pinia: Pinia
 async function settle() { for (let i = 0; i < 10; i++) { await Promise.resolve(); await nextTick() } }
-afterEach(() => { feedbackApp?.unmount(); feedbackApp = undefined; app?.unmount(); host?.remove(); finishConfirmation(false); notify.dismiss(); vi.restoreAllMocks(); vi.clearAllMocks() })
+afterEach(() => { feedbackApp?.unmount(); feedbackApp = undefined; app?.unmount(); disposePinia(pinia); host?.remove(); finishConfirmation(false); notify.dismiss(); vi.restoreAllMocks(); vi.clearAllMocks() })
 async function setup(overrides: Partial<User> = {}, withFeedback = false) {
   language.value = 'id'
-  const pinia = createPinia(); setActivePinia(pinia)
+  pinia = createPinia(); setActivePinia(pinia)
   const auth = useAuthStore()
   auth.setUser({ guid: 'user', name: 'User', email: 'user@example.test', photo_url: null, capabilities: { can_change_photo: true }, ...overrides } as NonNullable<typeof auth.user>)
   host = document.createElement('div'); document.body.append(host)
@@ -102,6 +103,23 @@ it('shows a decode failure and leaves cancellation available', async () => {
   host.querySelector('.crop-stage img')!.dispatchEvent(new Event('error')); await settle()
   expect(host.querySelector('[role=alert]')?.textContent).toContain('Berkas bukan gambar')
   expect(button('Simpan foto').disabled).toBe(true); expect(button('Batal').disabled).toBe(false)
+})
+
+it('refreshes the shared avatar exactly once after uploading to the same private photo URL', async () => {
+  const photoUrl = '/api/v1/me/photo'
+  mocks.photo.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }))
+  const { auth, select, ready, button } = await setup({ photo_url: photoUrl })
+  expect(mocks.photo).toHaveBeenCalledTimes(1)
+  await select(new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })); await ready()
+  mocks.export.mockResolvedValue(new File(['crop'], 'profile-photo.jpg', { type: 'image/jpeg' }))
+  mocks.upload.mockResolvedValueOnce({ ...auth.user! })
+  vi.mocked(URL.createObjectURL).mockReturnValueOnce('blob:updated-photo')
+  button('Simpan foto').click(); await settle()
+  expect(mocks.photo).toHaveBeenCalledTimes(2)
+  expect(auth.user?.photo_url).toBe(photoUrl)
+  expect(auth.photoSrc).toBe('blob:updated-photo')
+  expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:updated-photo')
+  expect(host.querySelector('.photo-crop-dialog')).toBeNull()
 })
 
 it('keeps Google email read-only and enables saving only a changed nonempty name', async () => {

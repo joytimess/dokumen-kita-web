@@ -12,6 +12,7 @@ import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
 import FormField from '../../components/ui/FormField.vue'
 import PasswordField from '../../components/ui/PasswordField.vue'
 import ProfilePhotoCrop from '../../components/profile/ProfilePhotoCrop.vue'
+import AccountAvatar from '../../components/profile/AccountAvatar.vue'
 
 const auth = useAuthStore()
 const user = computed(() => auth.user)
@@ -21,7 +22,6 @@ const nameError = ref('')
 const nameBusy = ref(false)
 const photoPreview = ref('')
 const photoFilename = ref('')
-const photoUrl = ref('')
 const photoInput = ref<HTMLInputElement>()
 const photoError = ref('')
 const photoBusy = ref(false)
@@ -41,8 +41,6 @@ const passwordFields = ref<Record<string, string>>({})
 const passwordBusy = ref(false)
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
-let privatePhotoObjectUrl = ''
-let photoRequest = 0
 
 const initials = computed(() => (user.value?.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') ?? ''))
 const resendSeconds = computed(() => Math.max(0, Math.ceil((resendAt.value - now.value) / 1000)))
@@ -55,38 +53,6 @@ function applyUser(next: NonNullable<typeof auth.user>) {
 
 function expireSession(cause: unknown) {
   if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
-}
-
-async function loadPhoto() {
-  const request = ++photoRequest
-  const current = auth.user
-  photoUrl.value = ''
-  if (privatePhotoObjectUrl) URL.revokeObjectURL(privatePhotoObjectUrl)
-  privatePhotoObjectUrl = ''
-  const url = current?.photo_url
-  if (!url) return
-  let privateRoute = false
-  try {
-    privateRoute = new URL(url).pathname.endsWith('/api/v1/me/photo')
-  } catch {
-    photoUrl.value = url
-    return
-  }
-  if (!privateRoute) {
-    photoUrl.value = url
-    return
-  }
-  try {
-    const blob = await accountApi.photo()
-    if (request !== photoRequest || auth.user?.guid !== current?.guid) return
-    privatePhotoObjectUrl = URL.createObjectURL(blob)
-    photoUrl.value = privatePhotoObjectUrl
-  } catch (cause) {
-    if (request === photoRequest && auth.user?.guid === current?.guid) {
-      photoError.value = t('Foto profil belum dapat dimuat.')
-      expireSession(cause)
-    }
-  }
 }
 
 function checkPhoto(event: Event) {
@@ -133,7 +99,8 @@ async function uploadPhoto(file: File) {
   try {
     applyUser(await accountApi.uploadPhoto(file))
     clearPhotoSelection()
-    await loadPhoto()
+    // The authenticated photo endpoint keeps the same URL after an upload.
+    await auth.loadPhoto(true)
     notify.success(t('Foto profil berhasil diperbarui.'))
   } catch (cause) {
     photoError.value = t(workspaceError(cause).fields.photo || workspaceError(cause).message)
@@ -152,13 +119,11 @@ async function deletePhoto() {
   try {
     applyUser(await accountApi.deletePhoto())
     clearPhotoSelection()
-    await loadPhoto()
     notify.success(t('Foto profil berhasil dihapus.'))
   } catch (cause) {
     photoError.value = t(workspaceError(cause).message)
     expireSession(cause)
     await auth.refresh()
-    await loadPhoto()
   } finally {
     photoBusy.value = false
   }
@@ -216,13 +181,10 @@ async function changePassword() {
 }
 
 onMounted(() => {
-  void loadPhoto()
   clock = setInterval(() => { now.value = Date.now() }, 1000)
 })
 onUnmounted(() => {
   clearInterval(clock)
-  photoRequest++
-  if (privatePhotoObjectUrl) URL.revokeObjectURL(privatePhotoObjectUrl)
   if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
 })
 </script>
@@ -240,10 +202,9 @@ onUnmounted(() => {
       <FeedbackMessage v-if="auth.sessionError" :message="t(auth.sessionError)" error />
       <section aria-labelledby="profile-identity-title" class="min-w-0 rounded-3xl border border-line bg-white p-5 sm:p-7">
         <div class="flex flex-col gap-5 min-[600px]:flex-row min-[600px]:items-center">
-          <span class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-full bg-sage text-2xl font-semibold text-primary">
-            <img v-if="photoUrl" :src="photoUrl" :alt="t('Foto profil')" class="size-full object-cover" />
-            <span v-else>{{ initials }}</span>
-          </span>
+          <AccountAvatar class="size-24 text-2xl">
+            <span>{{ initials }}</span>
+          </AccountAvatar>
           <div class="min-w-0 flex-1">
             <h2 id="profile-identity-title" class="text-xl font-bold wrap-anywhere">{{ user?.name }}</h2>
             <p class="mt-1 text-sm leading-6 text-muted wrap-anywhere">{{ user?.email }}</p>
@@ -265,7 +226,7 @@ onUnmounted(() => {
             <p id="profile-photo-hint" class="mt-2 text-xs leading-5 text-muted">{{ t('JPG, PNG, atau WebP · Maks. 8 MB') }}</p>
           </div>
         </div>
-        <FeedbackMessage v-if="!photoPreview" class="mt-4 mb-0!" :message="t(photoError)" error />
+        <FeedbackMessage v-if="!photoPreview" class="mt-4 mb-0!" :message="t(photoError || (auth.photoFailed ? 'Foto profil belum dapat dimuat.' : ''))" error />
       </section>
       <ProfilePhotoCrop v-if="photoPreview" :src="photoPreview" :filename="photoFilename" :busy="photoBusy" :error="photoError" @save="uploadPhoto" @close="clearPhotoSelection" />
 

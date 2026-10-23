@@ -27,6 +27,10 @@ const categoryOptions = computed(() => [
 const categoryError = ref('')
 const attempted = ref(false)
 const { busy, error, fields, run } = useWorkspaceRequest()
+function open() {
+  dialog.value?.showModal()
+}
+defineExpose({ open })
 
 onMounted(async () => {
   try {
@@ -73,7 +77,7 @@ async function createDraft() {
 </script>
 
 <template>
-  <BaseButton class="shrink-0" @click="dialog?.showModal()">+ {{ t('Buat dokumen') }}</BaseButton>
+  <BaseButton class="shrink-0" @click="open"><slot>+ {{ t('Buat dokumen') }}</slot></BaseButton>
   <dialog
     ref="dialog"
     aria-labelledby="draft-title"
