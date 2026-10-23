@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, type App } from 'vue'
 import { createPinia } from 'pinia'
+import { AxiosError } from 'axios'
 import SignaturePad from 'signature_pad'
 import SignatureCanvas from '../src/components/signatures/SignatureCanvas.vue'
 import AssetLibrary from '../src/components/signatures/AssetLibrary.vue'
@@ -212,9 +213,52 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     mocks.assets.mockResolvedValue({ data: [asset], meta: { total: 1, current_page: 1, last_page: 1, per_page: 6 }, links: { prev: null, next: null } })
     button('Simpan aset').click(); await settle()
     expect(mocks.confirmAction).toHaveBeenCalledWith('Simpan gambar ini sebagai aset tanda tangan?', expect.any(Object))
-    expect(mocks.uploadAsset).toHaveBeenCalledWith(expect.objectContaining({ name: 'tanda-tangan.png', type: 'image/png' }), 'drawn')
+    expect(mocks.uploadAsset).toHaveBeenCalledWith(expect.objectContaining({ name: 'tanda-tangan.png', type: 'image/png' }), 'drawn', expect.any(AbortSignal))
     expect(host.querySelector('#signature-tab-saved')?.getAttribute('aria-selected')).toBe('true')
     host.querySelector<HTMLButtonElement>('button[aria-label="Pratinjau tanda tangan"]')!.click(); await settle()
     expect(host.querySelector('dialog')?.open).toBe(true)
+  })
+  it.each(['mouse', 'touch'])('preserves real %s strokes after classification rejection and allows editing and retry', async (kind) => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:asset')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLImageElement.prototype, 'decode').mockImplementation(function (this: HTMLImageElement) { this.width = 1600; this.height = 600; return Promise.resolve() })
+    let reject!: (error: Error) => void
+    mocks.uploadAsset.mockReturnValueOnce(new Promise((_, no) => { reject = no }))
+    const { canvas } = mount(true); await settle()
+    button('Coretan langsung').click(); await settle()
+    draw(canvas, kind); await settle()
+    const original = structuredClone(data())
+    button('Gunakan coretan').click(); await settle()
+    const image = host.querySelector('img[alt="Preview aset baru"]')
+    button('Simpan aset').click(); await settle()
+    const verifying = host.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')
+    expect(verifying).toHaveLength(2)
+    for (const control of verifying) {
+      expect(control.disabled).toBe(true)
+      expect(control.textContent).toContain('Memverifikasi tanda tangan...')
+      expect(control.querySelector('.animate-spin')).not.toBeNull()
+    }
+    expect(host.querySelector('canvas')).toBe(canvas)
+    expect(data()).toEqual(original)
+    reject(new AxiosError('private details', undefined, undefined, undefined, {
+      status: 422, data: { error: { code: 'SIGNATURE_IMAGE_NOT_SIGNATURE' } }, headers: {},
+    } as never))
+    await settle()
+    expect(host.textContent).toContain('Gambar bukan tanda tangan.')
+    expect(host.querySelector('canvas')).toBe(canvas)
+    expect(data()).toEqual(original)
+    expect(host.querySelector('img[alt="Preview aset baru"]')).toBe(image)
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled()
+    expect(button('Gunakan coretan').disabled).toBe(false)
+    draw(canvas, kind); await settle()
+    expect(data()).toHaveLength(2)
+    button('Gunakan coretan').click(); await settle()
+    mocks.uploadAsset.mockResolvedValueOnce({ guid: 'retry', source_type: 'drawn' })
+    button('Simpan aset').click(); await settle()
+    expect(mocks.uploadAsset).toHaveBeenCalledTimes(2)
+    expect(mocks.notify.success).toHaveBeenCalledWith('Aset tanda tangan tersimpan.')
+    button('Coretan langsung').click(); await settle()
+    button('Hapus coretan').click(); await settle()
+    expect(button('Gunakan coretan').disabled).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 export const authMode = import.meta.env.VITE_AUTH_MODE === 'api' ? 'api' : 'prototype'
 export function apiOrigin(): string {
   const value = import.meta.env.VITE_API_BASE_URL
@@ -30,13 +30,14 @@ export async function mutation<T>(
   path: string,
   payload: unknown,
   method: 'post' | 'patch' | 'put' = 'post',
+  config?: AxiosRequestConfig,
 ): Promise<T> {
   await csrf()
   try {
-    return (await http[method]<T>(`${apiOrigin()}${path}`, payload)).data
+    return (await http[method]<T>(`${apiOrigin()}${path}`, payload, config)).data
   } catch (error) {
     if (!axios.isAxiosError(error) || error.response?.status !== 419) throw error
     await csrf()
-    return (await http[method]<T>(`${apiOrigin()}${path}`, payload)).data
+    return (await http[method]<T>(`${apiOrigin()}${path}`, payload, config)).data
   }
 }

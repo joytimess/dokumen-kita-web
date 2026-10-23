@@ -30,11 +30,14 @@ const page = ref<Page<SignatureAsset>>(),
   file = ref<File>(),
   preview = ref(''),
   source = ref<'drawn' | 'upload'>('upload'),
-  message = ref('')
+  message = ref(''),
+  submitting = ref(false)
 const { busy, error, fields, run } = useWorkspaceRequest()
 const tabs: HTMLButtonElement[] = []
 let active = true,
-  selection = 0
+  selection = 0,
+  confirming = false
+let submission: AbortController | undefined
 function setTab(element: unknown, index: number) {
   if (element instanceof HTMLButtonElement) tabs[index] = element
 }
@@ -95,8 +98,10 @@ async function removeAsset(asset: SignatureAsset) {
   await load(currentPage)
 }
 async function choose(value: File, type: 'drawn' | 'upload') {
+  if (!active || busy.value || submitting.value || props.disabled) return
   const serial = ++selection
   error.value = ''
+  fields.value = {}
   message.value = ''
   file.value = undefined
   if (preview.value) URL.revokeObjectURL(preview.value)
@@ -125,6 +130,7 @@ async function choose(value: File, type: 'drawn' | 'upload') {
     preview.value = url
   } catch {
     URL.revokeObjectURL(url)
+    if (!active || serial !== selection) return
     error.value = 'Dimensi gambar harus 16×16 sampai 2.048×1.024 piksel.'
   }
 }
@@ -135,16 +141,27 @@ function uploadInput(event: Event) {
   if (value) void choose(value, 'upload')
 }
 async function upload() {
-  if (!file.value || props.disabled) return
-  if (
-    !(await confirmAction('Simpan gambar ini sebagai aset tanda tangan?', {
+  if (!active || !file.value || busy.value || submitting.value || confirming || props.disabled) return
+  confirming = true
+  let confirmed: boolean
+  try {
+    confirmed = await confirmAction('Simpan gambar ini sebagai aset tanda tangan?', {
       title: t('Simpan tanda tangan'),
       action: t('Simpan'),
-    }))
-  )
-    return
-  const result = await run(() => documentsApi.uploadAsset(file.value!, source.value))
-  if (result) {
+    })
+  } finally {
+    confirming = false
+  }
+  if (!confirmed || !active || props.disabled || busy.value || !file.value) return
+  const selectedFile = file.value,
+    selectedSource = source.value
+  submitting.value = true
+  message.value = ''
+  const request = new AbortController()
+  submission = request
+  try {
+    const result = await run(() => documentsApi.uploadAsset(selectedFile, selectedSource, request.signal))
+    if (!result || !active) return
     file.value = undefined
     URL.revokeObjectURL(preview.value)
     preview.value = ''
@@ -152,12 +169,15 @@ async function upload() {
     notify.success(message.value)
     selectMethod('saved')
     await load()
-    if (props.selectable) emit('select', result)
+    if (active && props.selectable) emit('select', result)
+  } finally {
+    if (active) submitting.value = false
   }
 }
 onMounted(() => load())
 onUnmounted(() => {
   active = false
+  submission?.abort()
   selection++
   if (preview.value) URL.revokeObjectURL(preview.value)
 })
@@ -192,7 +212,7 @@ onUnmounted(() => {
               ? 'border-primary bg-primary text-white'
               : 'border-line bg-white text-muted hover:bg-soft'
           "
-          :disabled="busy || disabled"
+          :disabled="busy || submitting || disabled"
           @click="mode = item.id"
           @keydown="onTabKeydown($event, index)"
         >
@@ -202,7 +222,7 @@ onUnmounted(() => {
     </div>
     <FeedbackMessage :message="t(error)" error /><FeedbackMessage :message="t(message)" />
     <p v-for="(text, key) in fields" :key="key" class="mb-2 text-xs text-error">{{ text }}</p>
-    <fieldset class="min-w-0 border-0 p-0" :disabled="busy || disabled">
+    <fieldset class="min-w-0 border-0 p-0" :disabled="busy || submitting || disabled">
       <div
         id="signature-panel-saved"
         v-show="mode === 'saved'"
@@ -364,7 +384,7 @@ onUnmounted(() => {
         tabindex="0"
         class="min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
-        <SignatureCanvas :active="mode === 'drawn'" :disabled="busy || disabled" @created="choose($event, 'drawn')" />
+        <SignatureCanvas :active="mode === 'drawn'" :disabled="busy || submitting || disabled" :verifying="submitting && source === 'drawn'" @created="choose($event, 'drawn')" />
       </div>
       <div
         id="signature-panel-upload"
@@ -402,8 +422,8 @@ onUnmounted(() => {
           :src="preview"
           :alt="t('Preview aset baru')"
           class="h-32 w-full object-contain"
-        /><BaseButton class="mt-4" :loading="busy" @click="upload">{{
-          t('Simpan aset')
+        /><BaseButton class="mt-4" :loading="busy || submitting" @click="upload">{{
+          t(submitting ? 'Memverifikasi tanda tangan...' : 'Simpan aset')
         }}</BaseButton>
       </div>
     </fieldset>

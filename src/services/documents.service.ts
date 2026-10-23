@@ -150,11 +150,17 @@ export const documentsApi = {
   sign: (guid: string, payload: SignaturePayload) =>
     write<unknown>(`/assignments/${guid}/signatures`, payload),
   assets: (page = 1, perPage = 15) => get<Page<SignatureAsset>>('/signature-assets', { page, per_page: perPage }),
-  uploadAsset: (file: File, source: 'drawn' | 'upload') => {
+  uploadAsset: async (file: File, source: 'drawn' | 'upload', signal?: AbortSignal) => {
+    if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')
     const body = new FormData()
     body.append('file', file)
     body.append('source_type', source)
-    return write<SignatureAsset>('/signature-assets', body)
+    return (await mutation<{ data: SignatureAsset }>('/api/v1/signature-assets', body, 'post', {
+      signal,
+      // Groq can take up to 60 seconds, followed by image storage and persistence.
+      timeout: 75000,
+      validateStatus: (status) => status === 201,
+    })).data
   },
   async deleteAsset(guid: string) {
     if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')

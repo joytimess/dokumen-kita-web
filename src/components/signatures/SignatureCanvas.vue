@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import SignaturePad from 'signature_pad'
 import { confirmAction, notify } from '../../services/feedback'
 import { t } from '../../services/workspace-language'
-const props = withDefaults(defineProps<{ active?: boolean; disabled?: boolean }>(), { active: true })
+const props = withDefaults(defineProps<{ active?: boolean; disabled?: boolean; verifying?: boolean }>(), { active: true })
 const emit = defineEmits<{ created: [file: File] }>()
 const canvas = ref<HTMLCanvasElement>()
 const ink = ref(false),
@@ -155,9 +155,11 @@ onUnmounted(() => {
         type="button"
         class="min-h-11 rounded border border-line px-4 text-sm text-primary disabled:opacity-40"
         :disabled="!ink || disabled"
+        :aria-busy="verifying"
         @click="use"
       >
-        {{ t('Gunakan coretan') }}
+        <span v-if="verifying" class="mr-2 inline-block size-[15px] animate-spin rounded-full border-2 border-primary/35 border-t-primary motion-reduce:animate-none" aria-hidden="true"></span>
+        {{ t(verifying ? 'Memverifikasi tanda tangan...' : 'Gunakan coretan') }}
       </button>
     </div>
   </div>
