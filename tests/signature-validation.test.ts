@@ -32,7 +32,7 @@ vi.mock('../src/components/signatures/SignatureCanvas.vue', async () => {
       setup(_: unknown, { emit }: { emit: (event: string, file: File) => void }) {
         return () => h('button', {
           onClick: () => emit('created', new File(['drawn'], 'tanda-tangan.png', { type: 'image/png' })),
-        }, 'Gunakan coretan')
+        }, 'Gunakan tanda tangan')
       },
     },
   }
@@ -82,7 +82,7 @@ async function mount(selectable = false) {
 async function choose(source: 'upload' | 'drawn' = 'upload', file = new File(['image'], 'signature.png', { type: 'image/png' })) {
   button(source === 'upload' ? 'Unggah gambar' : 'Coretan langsung').click()
   await settle()
-  if (source === 'drawn') button('Gunakan coretan').click()
+  if (source === 'drawn') button('Gunakan tanda tangan').click()
   else {
     const input = host.querySelector<HTMLInputElement>('input[type="file"]')!
     Object.defineProperty(input, 'files', { configurable: true, value: [file] })

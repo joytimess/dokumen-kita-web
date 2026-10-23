@@ -1,4 +1,4 @@
-﻿// @vitest-environment happy-dom
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, type App } from 'vue'
 import { createPinia } from 'pinia'
@@ -24,7 +24,11 @@ function context() {
     arc: vi.fn(() => { painted = true }), fill: vi.fn(), fillRect: vi.fn(),
     clearRect: vi.fn(() => { painted = false }),
     drawImage: vi.fn(() => { painted = true }),
-    getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(40).fill(painted ? 255 : 0) })),
+    getImageData: vi.fn((_x: number, _y: number, width: number, height: number) => {
+      const data = new Uint8ClampedArray(width * height * 4)
+      if (painted) for (let x = 20; x < 30; x++) data.set([23, 76, 60, 255], (width * 10 + x) * 4)
+      return { data }
+    }),
   }
 }
 async function settle() { for (let i = 0; i < 10; i++) { await Promise.resolve(); await nextTick() } }
@@ -36,7 +40,13 @@ function mount(library = false) {
   app.use(createPinia()); app.mount(host)
   return { canvas: host.querySelector('canvas')!, created, props }
 }
-function button(text: string) { return Array.from(host.querySelectorAll('button')).find((item) => item.textContent?.trim() === text)! }
+function button(text: string) {
+  return Array.from(host.querySelectorAll('button')).find((item) => {
+    const copy = item.cloneNode(true) as HTMLElement
+    copy.querySelectorAll('[aria-hidden="true"]').forEach((element) => element.remove())
+    return copy.textContent?.trim() === text
+  })!
+}
 function pointer(canvas: HTMLCanvasElement, type: string, x: number, y: number, pointerType = 'mouse', down = true) {
   const target = type === 'pointerdown' ? canvas : window
   target.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType, clientX: x + bounds.left, clientY: y + bounds.top, button: type === 'pointerdown' ? 0 : -1, buttons: down ? 1 : 0, bubbles: true, cancelable: true }))
@@ -92,7 +102,7 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     expect(strokes[0]!.points[0]).toMatchObject({ x: 50, y: 80 })
     expect(strokes[0]).toMatchObject({ minWidth: 1.5, maxWidth: 3, penColor: '#174C3C', velocityFilterWeight: 0.7 })
     expect(contexts.get(canvas)!.arc.mock.calls.length).toBeGreaterThan(20)
-    expect(button('Gunakan coretan').disabled).toBe(false)
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
   })
   it('uses HiDPI dimensions without changing pointer coordinates and restores strokes uniformly after resizing', async () => {
     const { canvas } = mount(); draw(canvas); await settle()
@@ -105,7 +115,7 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     expect(canvas.width).toBe(800)
     bounds.width = 800; bounds.height = 300; observer.callback()
     expect(data()[0]!.points[0]).toMatchObject({ x: 50, y: 80 })
-    expect(button('Gunakan coretan').disabled).toBe(false)
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
   })
   it('defers resize during an active stroke until it ends', () => {
     const { canvas } = mount()
@@ -115,6 +125,26 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     pointer(canvas, 'pointerup', 40, 60, 'mouse', false)
     expect(canvas.width).toBe(800)
     expect(data()[0]!.points[0]).toMatchObject({ x: 10, y: 15 })
+  })
+  it('fits changing desktop/mobile aspect ratios uniformly and restores the original strokes on return', async () => {
+    const { canvas } = mount(); draw(canvas); await settle()
+    const original = structuredClone(data())
+    bounds.width = 360; bounds.height = 240; observer.callback()
+    expect(data()[0]!.points[0]).toMatchObject({ x: 22.5, y: 36 })
+    expect(data()[0]!.minWidth).toBeCloseTo(original[0]!.minWidth * 0.45)
+    bounds.width = 800; bounds.height = 200; observer.callback()
+    expect(data()[0]!.points[0]!.x).toBeCloseTo(50 * 2 / 3)
+    expect(data()[0]!.points[0]!.y).toBeCloseTo(80 * 2 / 3)
+    bounds.height = 300; observer.callback()
+    expect(data()).toEqual(original)
+    bounds.width = 360; bounds.height = 240; observer.callback()
+    draw(canvas, 'touch'); await settle()
+    bounds.width = 800; bounds.height = 300; observer.callback()
+    expect(data()).toHaveLength(2)
+    button('Hapus coretan').click(); await settle()
+    bounds.width = 360; bounds.height = 240; observer.callback()
+    expect(data()).toHaveLength(0)
+    expect(button('Gunakan tanda tangan').disabled).toBe(true)
   })
   it('records a closed curved stroke and recovers after pointer cancellation', async () => {
     const { canvas } = mount()
@@ -143,9 +173,9 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     oldRatio.dispatchEvent(new Event('change'))
     expect(canvas.width).toBe(2400)
     props.active = true; await settle()
-    expect(button('Gunakan coretan').disabled).toBe(false)
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
     props.disabled = true; await settle()
-    expect(button('Gunakan coretan').disabled).toBe(true)
+    expect(button('Gunakan tanda tangan').disabled).toBe(true)
     props.disabled = false; await settle()
     expect(SignaturePad.prototype.on).toHaveBeenCalledTimes(3)
     expect(SignaturePad.prototype.off).toHaveBeenCalledTimes(2)
@@ -153,37 +183,76 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
   })
   it('preserves clear confirmation, rejects blank export, and permits drawing again', async () => {
     const { canvas, created } = mount()
-    expect(button('Gunakan coretan').disabled).toBe(true)
+    expect(button('Gunakan tanda tangan').disabled).toBe(true)
+    expect(button('Hapus coretan').disabled).toBe(true)
     draw(canvas); await settle()
+    expect(button('Hapus coretan').disabled).toBe(false)
     mocks.confirmAction.mockResolvedValueOnce(false)
     button('Hapus coretan').click(); await settle()
-    expect(button('Gunakan coretan').disabled).toBe(false)
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
     button('Hapus coretan').click(); await settle()
     expect(mocks.confirmAction).toHaveBeenCalledWith('Hapus coretan tanda tangan ini?', expect.objectContaining({ danger: true }))
-    expect(button('Gunakan coretan').disabled).toBe(true)
-    button('Gunakan coretan').dispatchEvent(new MouseEvent('click')); await settle()
+    expect(button('Gunakan tanda tangan').disabled).toBe(true)
+    expect(button('Hapus coretan').disabled).toBe(true)
+    button('Gunakan tanda tangan').dispatchEvent(new MouseEvent('click')); await settle()
     expect(created).not.toHaveBeenCalled()
     draw(canvas); await settle()
-    button('Gunakan coretan').click(); await settle()
+    button('Gunakan tanda tangan').click(); await settle()
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ name: 'tanda-tangan.png', type: 'image/png' }))
   })
   it('caps PNG export dimensions and reports a failed export without losing strokes', async () => {
     bounds.width = 1200; bounds.height = 450; vi.stubGlobal('devicePixelRatio', 3)
     const { canvas, created } = mount(); draw(canvas); await settle()
+    contexts.get(canvas)!.getImageData.mockReturnValue({ data: new Uint8ClampedArray(canvas.width * canvas.height * 4).fill(255) })
     vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce((callback) => callback(null))
-    button('Gunakan coretan').click(); await settle()
+    button('Gunakan tanda tangan').click(); await settle()
     expect(created).not.toHaveBeenCalled()
     expect(mocks.notify.error).toHaveBeenCalledWith('Coretan gagal diproses. Silakan coba lagi.')
-    button('Gunakan coretan').click(); await settle()
+    button('Gunakan tanda tangan').click(); await settle()
     const exportCanvas = vi.mocked(HTMLCanvasElement.prototype.toBlob).mock.instances.at(-1)!
-    expect(exportCanvas.width).toBe(2048); expect(exportCanvas.height).toBe(768)
+    expect(exportCanvas.width).toBe(2048)
+    expect(exportCanvas.height).toBeLessThanOrEqual(1024)
+    const call = contexts.get(exportCanvas)!.drawImage.mock.calls[0]!
+    expect(Number(call[7]) / canvas.width).toBeCloseTo(Number(call[8]) / canvas.height)
     expect(created).toHaveBeenCalledTimes(1)
+  })
+  it('crops to nontransparent pixels with transparent padding without changing strokes or their aspect ratio', async () => {
+    const { canvas, created } = mount(); draw(canvas); await settle()
+    const original = structuredClone(data())
+    const pixels = new Uint8ClampedArray(canvas.width * canvas.height * 4)
+    for (let x = 200; x < 400; x++) pixels.set([23, 76, 60, 255], (100 * canvas.width + x) * 4)
+    // Include faint edge pixels in the crop instead of clipping antialiased ink.
+    pixels.set([23, 76, 60, 1], (149 * canvas.width + 399) * 4)
+    contexts.get(canvas)!.getImageData.mockReturnValue({ data: pixels })
+    button('Gunakan tanda tangan').click(); await settle()
+    const output = vi.mocked(HTMLCanvasElement.prototype.toBlob).mock.instances.at(-1)!
+    const exported = contexts.get(output)!
+    expect(output.width).toBe(248)
+    expect(output.height).toBe(98)
+    expect(exported.drawImage).toHaveBeenCalledWith(canvas, 200, 100, 200, 50, 24, 24, 200, 50)
+    expect(exported.fillRect).not.toHaveBeenCalled()
+    expect(exported.fill).not.toHaveBeenCalled()
+    expect(HTMLCanvasElement.prototype.toBlob).toHaveBeenCalledWith(expect.any(Function), 'image/png')
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ name: 'tanda-tangan.png', type: 'image/png' }))
+    expect(data()).toEqual(original)
+  })
+  it('keeps transparent padding for strokes drawn against the canvas edges', async () => {
+    const { canvas } = mount(); draw(canvas); await settle()
+    const pixels = new Uint8ClampedArray(canvas.width * canvas.height * 4)
+    for (let x = 0; x < 10; x++) pixels.set([23, 76, 60, 255], x * 4)
+    pixels.set([23, 76, 60, 255], pixels.length - 4)
+    contexts.get(canvas)!.getImageData.mockReturnValue({ data: pixels })
+    button('Gunakan tanda tangan').click(); await settle()
+    const output = vi.mocked(HTMLCanvasElement.prototype.toBlob).mock.instances.at(-1)!
+    expect(contexts.get(output)!.drawImage).toHaveBeenCalledWith(canvas, 0, 0, 1600, 600, 24, 24, 1600, 600)
+    expect(output.width).toBe(1648)
+    expect(output.height).toBe(648)
   })
   it('disconnects observers, DPR and pointer listeners and ignores a late PNG export after unmount', async () => {
     const { canvas, created } = mount(); draw(canvas); await settle()
     let complete!: BlobCallback
     vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce((callback) => { complete = callback })
-    button('Gunakan coretan').click()
+    button('Gunakan tanda tangan').click()
     const oldResolution = resolution
     app!.unmount(); app = undefined
     expect(observer.disconnect).toHaveBeenCalledOnce()
@@ -207,8 +276,8 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     draw(canvas); await settle()
     button('Aset tersimpan').click(); await settle()
     button('Coretan langsung').click(); await settle()
-    expect(button('Gunakan coretan').disabled).toBe(false)
-    button('Gunakan coretan').click(); await settle()
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
+    button('Gunakan tanda tangan').click(); await settle()
     expect(host.textContent).toContain('Preview aset baru')
     mocks.assets.mockResolvedValue({ data: [asset], meta: { total: 1, current_page: 1, last_page: 1, per_page: 6 }, links: { prev: null, next: null } })
     button('Simpan aset').click(); await settle()
@@ -228,7 +297,7 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     button('Coretan langsung').click(); await settle()
     draw(canvas, kind); await settle()
     const original = structuredClone(data())
-    button('Gunakan coretan').click(); await settle()
+    button('Gunakan tanda tangan').click(); await settle()
     const image = host.querySelector('img[alt="Preview aset baru"]')
     button('Simpan aset').click(); await settle()
     const verifying = host.querySelectorAll<HTMLButtonElement>('button[aria-busy="true"]')
@@ -249,16 +318,16 @@ describe('SignatureCanvas with real signature_pad and simulated canvas context',
     expect(data()).toEqual(original)
     expect(host.querySelector('img[alt="Preview aset baru"]')).toBe(image)
     expect(URL.revokeObjectURL).not.toHaveBeenCalled()
-    expect(button('Gunakan coretan').disabled).toBe(false)
+    expect(button('Gunakan tanda tangan').disabled).toBe(false)
     draw(canvas, kind); await settle()
     expect(data()).toHaveLength(2)
-    button('Gunakan coretan').click(); await settle()
+    button('Gunakan tanda tangan').click(); await settle()
     mocks.uploadAsset.mockResolvedValueOnce({ guid: 'retry', source_type: 'drawn' })
     button('Simpan aset').click(); await settle()
     expect(mocks.uploadAsset).toHaveBeenCalledTimes(2)
     expect(mocks.notify.success).toHaveBeenCalledWith('Aset tanda tangan tersimpan.')
     button('Coretan langsung').click(); await settle()
     button('Hapus coretan').click(); await settle()
-    expect(button('Gunakan coretan').disabled).toBe(true)
+    expect(button('Gunakan tanda tangan').disabled).toBe(true)
   })
 })
