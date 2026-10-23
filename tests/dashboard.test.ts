@@ -86,11 +86,12 @@ function stat(label: string) {
     .find((item) => text(item).startsWith(label))!
 }
 function titles() { return [...host.querySelectorAll('article a[title]')].map((item) => item.textContent) }
-function filterMenu() { return host.querySelector<HTMLDetailsElement>('details:has(>summary[aria-label="Filter dokumen"])')! }
+function filterMenu() { return host.querySelector<HTMLDivElement>('div:has(>button[aria-controls="dashboard-filters"])')! }
+function filterTrigger() { return filterMenu().querySelector<HTMLButtonElement>('button[aria-controls="dashboard-filters"]')! }
 async function openFilters() {
-  filterMenu().querySelector('summary')!.click()
+  filterTrigger().click()
   await settle()
-  expect(filterMenu().open).toBe(true)
+  expect(filterTrigger().getAttribute('aria-expanded')).toBe('true')
 }
 async function select(label: string, option: string) {
   host.querySelector<HTMLElement>(`[role=combobox][aria-label="${label}"]`)!.click()
@@ -398,20 +399,38 @@ describe('dashboard workspace', () => {
     stat('Draft').click(); await settle()
     await openFilters()
     filterMenu().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await settle()
-    expect(filterMenu().open).toBe(false)
-    expect(document.activeElement).toBe(filterMenu().querySelector('summary'))
+    expect(filterTrigger().getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(filterTrigger())
     await openFilters()
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await settle()
-    expect(filterMenu().open).toBe(false)
+    expect(filterTrigger().getAttribute('aria-expanded')).toBe('false')
     expect(router.currentRoute.value.query).toEqual({})
     expect(stat('Draft').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('toggles the filter dropdown from its trigger and keeps selections across reopening without extra requests', async () => {
+    await mount()
+    expect(filterTrigger().getAttribute('aria-expanded')).toBe('false')
+    await openFilters()
+    await select('Kategori', 'Perjanjian')
+    const calls = api.list.mock.calls.length
+    filterMenu().dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await settle()
+    expect(filterTrigger().getAttribute('aria-expanded')).toBe('true')
+    filterTrigger().click(); await settle()
+    expect(filterTrigger().getAttribute('aria-expanded')).toBe('false')
+    await vi.advanceTimersByTimeAsync(200); await settle()
+    expect(host.querySelector('#dashboard-filters')).toBeNull()
+    await openFilters()
+    expect(host.querySelector('[role=combobox][aria-label="Kategori"]')?.textContent).toContain('Perjanjian')
+    expect(titles()).toEqual(['Alpha'])
+    expect(api.list).toHaveBeenCalledTimes(calls)
   })
 
   it('keeps the Documents route presentation and creation flow unchanged', async () => {
     await mount('/documents?status=draft')
     expect(host.querySelector('h1')?.textContent).toBe('Dokumen Saya')
     expect(host.querySelector('[aria-label="Ringkasan dokumen"]')).toBeNull()
-    expect(host.querySelector('summary[aria-label="Filter dokumen"]')).toBeNull()
+    expect(host.querySelector('button[aria-controls="dashboard-filters"]')).toBeNull()
     expect(host.querySelector('[role=combobox][aria-label=Visibilitas]')).not.toBeNull()
     expect(host.querySelector('[role=combobox][aria-label=Status]')).not.toBeNull()
     await select('Status', 'Selesai')

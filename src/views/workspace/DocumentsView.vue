@@ -22,7 +22,9 @@ const router = useRouter()
 const auth = useAuthStore()
 const summary = computed(() => route.path === '/dashboard')
 const createDocument = ref<InstanceType<typeof CreateDocumentButton>>()
-const filterMenu = ref<HTMLDetailsElement>()
+const filterMenu = ref<HTMLDivElement>()
+const filterTrigger = ref<HTMLButtonElement>()
+const filtersOpen = ref(false)
 const page = ref<Page<DocumentRecord>>()
 const status = ref('')
 const visibility = ref<'active' | 'hidden'>('active')
@@ -117,9 +119,9 @@ function resetDashboardFilters() {
 }
 
 function closeFilters(focus = false) {
-  if (!filterMenu.value?.open) return
-  filterMenu.value.open = false
-  if (focus) filterMenu.value.querySelector('summary')?.focus()
+  if (!filtersOpen.value) return
+  filtersOpen.value = false
+  if (focus) filterTrigger.value?.focus()
 }
 
 function outsideFilters(event: PointerEvent) {
@@ -458,13 +460,17 @@ onUnmounted(() => {
         <input v-model="query" type="search" maxlength="200" class="min-h-11 w-full min-w-0 rounded-xl border border-line bg-white pl-10 pr-3 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15" :placeholder="t('Cari judul dokumen...')" @input="queryChanged" />
       </label>
       <div class="flex min-w-0 flex-wrap items-center gap-2 xl:shrink-0">
-        <details ref="filterMenu" class="relative" @keydown.esc.prevent.stop="closeFilters(true)">
-          <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-line px-4 text-sm font-medium text-ink hover:bg-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden" :aria-label="t('Filter dokumen')" aria-controls="dashboard-filters">
-            <span class="material-symbols-outlined text-[20px] text-muted" aria-hidden="true">filter_list</span>
-            {{ t('Filter') }}
-            <span v-if="dashboardFilterCount" class="rounded-full bg-sage px-2 py-0.5 text-xs text-primary">{{ numberLabel(dashboardFilterCount) }}</span>
-          </summary>
-          <div id="dashboard-filters" class="absolute left-0 top-full z-30 mt-2 grid max-h-[70dvh] w-[min(20rem,calc(100vw-3rem))] gap-4 overflow-y-auto rounded-xl border border-line bg-white p-4 shadow-lg xl:left-auto xl:right-0" role="group" :aria-label="t('Filter dokumen')">
+        <div ref="filterMenu" class="select-control" @keydown.esc.prevent.stop="closeFilters(true)">
+          <button ref="filterTrigger" type="button" class="select-control-trigger" :class="filtersOpen && 'border-primary'" :aria-label="t('Filter dokumen')" :aria-expanded="filtersOpen" aria-controls="dashboard-filters" @click="filtersOpen = !filtersOpen">
+            <span class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-[20px] text-muted" aria-hidden="true">filter_list</span>
+              {{ t('Filter') }}
+              <span v-if="dashboardFilterCount" class="rounded-full bg-sage px-2 py-0.5 text-xs text-primary">{{ numberLabel(dashboardFilterCount) }}</span>
+            </span>
+            <span class="select-control-chevron material-symbols-outlined" :class="filtersOpen && 'rotate-180'" aria-hidden="true">expand_more</span>
+          </button>
+          <Transition name="workspace-dropdown">
+          <div v-if="filtersOpen" id="dashboard-filters" :inert="!filtersOpen" class="absolute left-0 top-full z-30 mt-2 grid max-h-[70dvh] w-[min(20rem,calc(100vw-3rem))] origin-top-left gap-4 overflow-y-auto rounded-xl border border-line bg-white p-4 text-ink shadow-xl xl:left-auto xl:right-0 xl:origin-top-right" role="group" :aria-label="t('Filter dokumen')">
             <div class="grid gap-2 text-xs font-medium text-muted">
               {{ t('Visibilitas') }}
               <SelectControl v-model="visibility" floating :ariaLabel="t('Visibilitas')" class="min-h-11 w-full text-sm" :options="visibilityOptions" @change="filtersChanged" />
@@ -485,7 +491,8 @@ onUnmounted(() => {
             </div>
             <button type="button" class="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary hover:bg-soft" @click="resetDashboardFilters">{{ t('Reset filter') }}</button>
           </div>
-        </details>
+          </Transition>
+        </div>
         <div class="min-w-0 flex-1 xl:w-56 xl:flex-none">
           <SelectControl v-model="sort" :ariaLabel="t('Urutkan')" class="min-h-11 w-full text-sm" :options="[
             { value: 'created', label: t('Terbaru dibuat') },

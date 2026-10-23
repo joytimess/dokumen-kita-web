@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import type { Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import axios from 'axios'
 import AccountAvatar from '../profile/AccountAvatar.vue'
+import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { useAuthStore } from '../../stores/auth'
-import { notificationsApi } from '../../services/notifications.service'
-import { notify } from '../../services/feedback'
-import { workspaceError } from '../../services/workspace.errors'
+import { useNotificationsStore } from '../../stores/notifications'
 import { dateLabel } from '../../utils/documents'
 import { formatNumber, t } from '../../services/workspace-language'
 import type { UserNotification } from '../../types/notifications'
@@ -16,21 +15,17 @@ const emit = defineEmits<{ toggleSidebar: [] }>()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const notificationState = useNotificationsStore()
+const { notifications, unreadCount, notificationError, notificationLoading, notificationPage, notificationLastPage, markingRead } = storeToRefs(notificationState)
+const { loadNotifications, markRead } = notificationState
 const beforeLogout = inject<Ref<(() => Promise<boolean>) | null>>('workspaceBeforeLogout')
 const root = ref<HTMLElement>()
 const menuButton = ref<HTMLButtonElement>()
+const notificationButton = ref<HTMLButtonElement>()
 const activeTrigger = ref<HTMLElement>()
 const menu = ref<'notifications' | 'profile' | null>(null)
-const notifications = ref<UserNotification[]>([])
-const unreadCount = ref<number>()
-const notificationError = ref('')
-const notificationLoading = ref(false)
-const notificationPage = ref(0)
-const notificationLastPage = ref(1)
-const markingRead = ref(false)
 const logoutBusy = ref(false)
 const logoutError = ref('')
-let requestId = 0
 
 const routeTitle = computed(() => t(String(route.meta.title ?? 'Dokumen Kita')))
 watch(() => route.fullPath, () => { menu.value = null })
@@ -53,35 +48,14 @@ function notificationCopy(item: UserNotification) {
   return copy ? { title: t(copy[0]), message: t(copy[1]) } : { title: item.title, message: item.message }
 }
 
-async function loadNotifications(reset = false) {
-  if (notificationLoading.value || !auth.user) return
-  if (!reset && notificationPage.value >= notificationLastPage.value) return
-  const identity = auth.user.guid
-  const id = ++requestId
-  const pageNumber = reset ? 1 : notificationPage.value + 1
-  notificationLoading.value = true
-  notificationError.value = ''
-  try {
-    const result = await notificationsApi.list(pageNumber)
-    if (id !== requestId || auth.user?.guid !== identity) return
-    if (reset) notifications.value = result.data
-    else {
-      const seen = new Set(notifications.value.map((item) => item.guid))
-      notifications.value.push(...result.data.filter((item) => !seen.has(item.guid)))
-    }
-    notificationPage.value = result.meta.current_page
-    notificationLastPage.value = result.meta.last_page
-    unreadCount.value = result.meta.unread_count
-  } catch (cause) {
-    if (id !== requestId || auth.user?.guid !== identity) return
-    notificationError.value = axios.isAxiosError(cause)
-      ? workspaceError(cause).message
-      : 'Notifikasi belum dapat dimuat.'
-    if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
-  } finally {
-    if (id === requestId) notificationLoading.value = false
-  }
-}
+watch(() => notificationState.centerRequested, async (requested) => {
+  if (!requested) return
+  notificationState.centerRequested = false
+  menu.value = 'notifications'
+  await nextTick()
+  activeTrigger.value = notificationButton.value
+  void notificationState.ensureLoaded()
+}, { immediate: true })
 
 async function openMenu(value: 'notifications' | 'profile', event: MouseEvent) {
   if (menu.value === value) {
@@ -92,26 +66,6 @@ async function openMenu(value: 'notifications' | 'profile', event: MouseEvent) {
   menu.value = value
   logoutError.value = ''
   if (value === 'notifications') await loadNotifications(true)
-}
-
-async function markRead(item: UserNotification) {
-  if (item.read_at || markingRead.value) return true
-  const identity = auth.user?.guid
-  markingRead.value = true
-  try {
-    const result = await notificationsApi.markRead(item.guid)
-    if (auth.user?.guid !== identity) return false
-    const current = notifications.value.find((notification) => notification.guid === item.guid)
-    if (current) current.read_at = result.data.read_at
-    unreadCount.value = result.meta.unread_count
-    return true
-  } catch (cause) {
-    if (axios.isAxiosError(cause) && cause.response?.status === 401) auth.user = null
-    notify.error(t('Notifikasi belum dapat ditandai dibaca.'))
-    return false
-  } finally {
-    markingRead.value = false
-  }
 }
 
 async function openNotification(item: UserNotification) {
@@ -153,12 +107,11 @@ function focusMenuButton() {
 defineExpose({ focusMenuButton })
 
 onMounted(() => {
-  void loadNotifications(true)
+  void notificationState.ensureLoaded()
   document.addEventListener('pointerdown', onOutside)
   document.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {
-  requestId++
   document.removeEventListener('pointerdown', onOutside)
   document.removeEventListener('keydown', onKeydown)
 })
@@ -183,6 +136,7 @@ onUnmounted(() => {
 
     <div ref="root" class="relative flex shrink-0 items-center gap-1">
       <button
+        ref="notificationButton"
         type="button"
         class="relative grid size-11 place-items-center rounded-xl text-muted hover:bg-soft"
         :aria-label="unreadCount ? t(':count notifikasi belum dibaca', { count: formatNumber(unreadCount) }) : t('Notifikasi')"

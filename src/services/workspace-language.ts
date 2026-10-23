@@ -21,6 +21,8 @@ const english: Record<string, string> = {
   'Halaman tidak ditemukan': 'Page not found',
   'Lewati ke konten': 'Skip to content',
   'Tutup notifikasi': 'Close notification',
+  'Anda memiliki :count notifikasi': 'You have :count notifications',
+  'Lihat pembaruan dokumen dan tanda tangan Anda.': 'See updates to your documents and signatures.',
   Batal: 'Cancel',
   Tutup: 'Close',
   'Selamat datang, :name.': 'Welcome, :name.',

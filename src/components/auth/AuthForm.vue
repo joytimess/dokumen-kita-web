@@ -11,6 +11,7 @@ import { prototypeSubmit } from '../../services/auth.mock'
 import { authError } from '../../services/auth.errors'
 import { validateAuth } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
+import { useNotificationsStore } from '../../stores/notifications'
 import { afterAuthentication } from '../../utils/authRedirect'
 import { pendingInvitation } from '../../utils/invitation'
 import { confirmAction, notify } from '../../services/feedback'
@@ -19,6 +20,7 @@ const props = defineProps<{ kind: AuthKind }>()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const notifications = useNotificationsStore()
 const fields = reactive({
   name: '',
   email: '',
@@ -105,7 +107,8 @@ async function submit() {
             }),
       )
       auth.sessionError = ''
-      notify.success(props.kind === 'login' ? 'Berhasil masuk.' : 'Akun berhasil dibuat.')
+      if (props.kind === 'login') notifications.queueLoginSummary()
+      else notify.success('Akun berhasil dibuat.')
       await router.push(
         afterAuthentication(
           auth.user!.email_verified,
@@ -182,9 +185,7 @@ function google() {
     error
   /><FeedbackMessage :message="message" :error="failed" />
   <template v-if="auth.user"
-    ><FeedbackMessage
-      :message="`Sesi aktif sebagai ${auth.user.name}.${auth.user.email_verified ? '' : ' Email Anda belum terverifikasi.'}`"
-    /><RouterLink
+    ><RouterLink
       to="/"
       class="inline-flex min-h-12 items-center justify-center gap-5 rounded-[7px] border border-primary bg-primary px-6 py-3 text-center text-sm font-semibold leading-normal text-white! hover:bg-[#174c39] hover:no-underline! disabled:cursor-wait disabled:opacity-65"
       >Kembali ke beranda</RouterLink

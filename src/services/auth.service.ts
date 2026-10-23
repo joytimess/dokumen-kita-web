@@ -1,5 +1,5 @@
 import { apiOrigin, http, mutation } from './http'
-import { workspaceDestination } from '../utils/authRedirect'
+import { clearGoogleLoginSummary, googleLoginDestination } from '../utils/googleLoginSummary'
 import type {
   LoginPayload,
   RegisterPayload,
@@ -52,6 +52,13 @@ export const authApi = {
     await mutation<void>('/api/v1/auth/logout', {})
   },
   google(destination?: string) {
-    window.location.assign(`${apiOrigin()}/api/v1/auth/google/redirect?redirect=${encodeURIComponent(workspaceDestination(destination))}`)
+    const origin = apiOrigin()
+    const target = googleLoginDestination(destination)
+    try {
+      window.location.assign(`${origin}/api/v1/auth/google/redirect?redirect=${encodeURIComponent(target)}`)
+    } catch (cause) {
+      clearGoogleLoginSummary()
+      throw cause
+    }
   },
 }

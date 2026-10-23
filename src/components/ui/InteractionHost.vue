@@ -21,6 +21,13 @@ function close(value: boolean) {
 function onClose() {
   setTimeout(() => finishConfirmation(accepted), 180)
 }
+
+function openNotice() {
+  const current = notice.value
+  if (!current?.action) return
+  notify.dismiss(current.id)
+  current.action()
+}
 </script>
 
 <template>
@@ -38,7 +45,12 @@ function onClose() {
       "
       :role="notice.kind === 'error' ? 'alert' : 'status'"
     >
-      <span class="min-w-0 flex-1 wrap-anywhere">{{ t(notice.message) }}</span>
+      <span v-if="notice.icon" class="material-symbols-outlined shrink-0 text-[22px] text-primary" aria-hidden="true">{{ notice.icon }}</span>
+      <button v-if="notice.action" type="button" class="min-w-0 flex-1 rounded text-left wrap-anywhere focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" @click="openNotice">
+        <span class="block font-semibold">{{ t(notice.message) }}</span>
+        <span v-if="notice.description" class="mt-1 block text-xs leading-5 text-muted">{{ t(notice.description) }}</span>
+      </button>
+      <span v-else class="min-w-0 flex-1 wrap-anywhere">{{ t(notice.message) }}</span>
       <button
         type="button"
         :class="notice.kind === 'error' ? 'text-white' : 'text-muted'"

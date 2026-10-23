@@ -1,6 +1,8 @@
 import { watch } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useNotificationsStore } from '../stores/notifications'
+import { clearGoogleLoginSummary, consumeGoogleLoginSummary } from '../utils/googleLoginSummary'
 import { authMode } from '../services/http'
 import { rememberInvitation, pendingInvitation, clearInvitation } from '../utils/invitation'
 import { afterAuthentication } from '../utils/authRedirect'
@@ -123,6 +125,14 @@ const router = createRouter({
   },
 })
 router.beforeEach(async (to) => {
+  if (authMode === 'api' && to.query.login_summary !== undefined) {
+    const loginCompleted = consumeGoogleLoginSummary(to.query.login_summary)
+    const auth = useAuthStore()
+    await auth.restore()
+    if (loginCompleted && auth.user && !auth.sessionError) useNotificationsStore().queueLoginSummary()
+    return { path: to.path, query: { ...to.query, login_summary: undefined }, hash: to.hash, replace: true }
+  }
+  if (to.path === '/login' && to.query.error) clearGoogleLoginSummary()
   const common = ['/login', '/register'].includes(to.path)
   const token = to.meta.invitation ? to.query.token : common ? to.query.invitation_token : undefined
   if (token !== undefined) {
@@ -159,7 +169,15 @@ function updateTitle(to = router.currentRoute.value) {
   setWorkspaceActive(inWorkspace)
   document.title = `${t(String(to.meta.title ?? 'Dokumen Kita'))} · Dokumen Kita`
 }
-router.afterEach((to) => updateTitle(to))
+router.afterEach((to, _from, failure) => {
+  updateTitle(to)
+  if (failure || authMode !== 'api') return
+  const notifications = useNotificationsStore()
+  void notifications.showLoginSummary(() => {
+    notifications.centerRequested = true
+    if (!router.currentRoute.value.meta.workspace) void router.push('/dashboard')
+  })
+})
 watch(language, () => updateTitle())
 
 export default router
