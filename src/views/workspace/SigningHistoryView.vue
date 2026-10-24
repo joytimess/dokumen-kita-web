@@ -529,7 +529,7 @@ onUnmounted(() => {
         {{ t('Tampilkan baris') }}
         <SelectControl
           :model-value="perPage"
-          :aria-label="t('Tampilkan baris')"
+          :ariaLabel="t('Tampilkan baris')"
           class="h-9 text-sm"
           :options="[
             { value: 5, label: '5' },

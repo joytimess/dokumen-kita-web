@@ -103,11 +103,26 @@ it('retains previous/next states and page-size query behavior', async () => {
   await settle()
   expect(router.currentRoute.value.query.page).toBe('2')
   expect(api.list.mock.lastCall?.[0].page).toBe(2)
-  host.querySelector<HTMLElement>('[role=option][aria-selected=false]')!.click()
+  let control = host.querySelector<HTMLElement>('[role=combobox][aria-label="Tampilkan baris"]')!
+  expect(control.textContent).toContain('5')
+  control.click()
+  await settle()
+  const options = [...host.querySelectorAll<HTMLElement>('[role=option]')]
+  expect(options.find((option) => option.getAttribute('aria-selected') === 'true')?.textContent?.trim()).toBe('5')
+  options.find((option) => option.textContent?.trim() === '25')!.click()
   await settle()
   expect(router.currentRoute.value.query.per_page).toBe('25')
   expect(router.currentRoute.value.query.page).toBeUndefined()
   expect(api.list.mock.lastCall?.[0].perPage).toBe(25)
+  control = host.querySelector<HTMLElement>('[role=combobox][aria-label="Tampilkan baris"]')!
+  expect(control.textContent).toContain('25')
+  expect(control.getAttribute('aria-expanded')).toBe('false')
+  control.click()
+  await settle()
+  host.querySelectorAll<HTMLElement>('[role=option]')[0]!.click()
+  await settle()
+  expect(router.currentRoute.value.query.per_page).toBeUndefined()
+  expect(api.list.mock.lastCall?.[0].perPage).toBe(5)
 })
 
 it('checks access before navigating to the existing version viewer', async () => {
