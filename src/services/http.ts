@@ -1,6 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 export const authMode = import.meta.env.VITE_AUTH_MODE === 'api' ? 'api' : 'prototype'
-export function apiOrigin(): string {
+export function backendOrigin(): string {
   const value = import.meta.env.VITE_API_BASE_URL
   if (!value) throw new Error('Origin API belum dikonfigurasi.')
 
@@ -16,9 +16,10 @@ export function apiOrigin(): string {
   )
     throw new Error('API harus berupa origin HTTP(S) tanpa path atau kredensial.')
 
-  // Development: request melalui Vite proxy
-  // Build: request langsung ke backend
-  return import.meta.env.DEV ? window.location.origin : url.origin
+  return url.origin
+}
+export function apiOrigin(): string {
+  return backendOrigin()
 }
 export const http = axios.create({
   withCredentials: true,
@@ -28,6 +29,43 @@ export const http = axios.create({
   xsrfCookieName: 'XSRF-TOKEN',
   xsrfHeaderName: 'X-XSRF-TOKEN',
 })
+let activeRequests = 0
+let sessionIdle: (() => void) | undefined
+let googleRedirectPending = false
+const redirectCancellation = new axios.CanceledError('Google sign-in is starting.')
+http.interceptors.request.use((config) => {
+  if (googleRedirectPending) throw redirectCancellation
+  activeRequests++
+  return config
+}, (error) => { throw error }, { synchronous: true })
+function requestFinished() {
+  if (--activeRequests === 0) {
+    sessionIdle?.()
+    sessionIdle = undefined
+  }
+}
+http.interceptors.response.use((response) => {
+  requestFinished()
+  return response
+}, (error) => {
+  if (error !== redirectCancellation) requestFinished()
+  return Promise.reject(error)
+})
+if (typeof window !== 'undefined') window.addEventListener('pageshow', (event) => {
+  if (event.persisted) googleRedirectPending = false
+})
+export async function navigateAfterSessionRequests(navigate: () => void) {
+  if (googleRedirectPending) return
+  googleRedirectPending = true
+  try {
+    // Stateful API responses can all set the session cookie, even GET /me.
+    if (activeRequests) await new Promise<void>((resolve) => { sessionIdle = resolve })
+    navigate()
+  } catch (error) {
+    googleRedirectPending = false
+    throw error
+  }
+}
 export async function csrf() {
   await http.get(`${apiOrigin()}/sanctum/csrf-cookie`)
 }

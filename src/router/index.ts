@@ -125,12 +125,14 @@ const router = createRouter({
   },
 })
 router.beforeEach(async (to) => {
-  if (authMode === 'api' && to.query.login_summary !== undefined) {
+  const oauthReturn = authMode === 'api' && to.query.login_summary !== undefined
+    ? { path: to.path, query: { ...to.query, login_summary: undefined }, hash: to.hash, replace: true }
+    : undefined
+  if (oauthReturn) {
     const loginCompleted = consumeGoogleLoginSummary(to.query.login_summary)
     const auth = useAuthStore()
-    await auth.restore()
+    await auth.refresh()
     if (loginCompleted && auth.user && !auth.sessionError) useNotificationsStore().queueLoginSummary()
-    return { path: to.path, query: { ...to.query, login_summary: undefined }, hash: to.hash, replace: true }
   }
   if (to.path === '/login' && to.query.error) clearGoogleLoginSummary()
   const common = ['/login', '/register'].includes(to.path)
@@ -151,11 +153,12 @@ router.beforeEach(async (to) => {
     return { path: '/invitations/claim', query: valid ? {} : { error: 'invalid' }, replace: true }
   }
   if (authMode !== 'api') return
-  if (!to.meta.workspace && !common) return
+  if (!to.meta.workspace && !common) return oauthReturn
   const auth = useAuthStore()
   await auth.restore()
-  if (auth.sessionError) return
-  if (!auth.user && to.meta.workspace) return { path: '/login', query: { redirect: to.fullPath } }
+  if (auth.sessionError) return oauthReturn
+  if (!auth.user && to.meta.workspace)
+    return { path: '/login', query: { redirect: oauthReturn ? router.resolve(oauthReturn).fullPath : to.fullPath } }
   if (auth.user && to.meta.invitation && !auth.user.email_verified)
     return afterAuthentication(false, '/invitations/claim')
   if (auth.user && common)
@@ -163,6 +166,7 @@ router.beforeEach(async (to) => {
       auth.user.email_verified,
       pendingInvitation() ? '/invitations/claim' : to.query.redirect,
     )
+  return oauthReturn
 })
 function updateTitle(to = router.currentRoute.value) {
   const inWorkspace = Boolean(to.meta.workspace)

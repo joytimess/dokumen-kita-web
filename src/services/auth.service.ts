@@ -1,4 +1,4 @@
-import { apiOrigin, http, mutation } from './http'
+import { apiOrigin, backendOrigin, http, mutation, navigateAfterSessionRequests } from './http'
 import { clearGoogleLoginSummary, googleLoginDestination } from '../utils/googleLoginSummary'
 import type {
   LoginPayload,
@@ -52,13 +52,15 @@ export const authApi = {
     await mutation<void>('/api/v1/auth/logout', {})
   },
   google(destination?: string) {
-    const origin = apiOrigin()
-    const target = googleLoginDestination(destination)
-    try {
-      window.location.assign(`${origin}/api/v1/auth/google/redirect?redirect=${encodeURIComponent(target)}`)
-    } catch (cause) {
-      clearGoogleLoginSummary()
-      throw cause
-    }
+    return navigateAfterSessionRequests(() => {
+      const origin = backendOrigin()
+      const target = googleLoginDestination(destination)
+      try {
+        window.location.assign(`${origin}/api/v1/auth/google/redirect?redirect=${encodeURIComponent(target)}`)
+      } catch (cause) {
+        clearGoogleLoginSummary()
+        throw cause
+      }
+    })
   },
 }

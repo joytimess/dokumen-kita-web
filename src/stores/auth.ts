@@ -82,7 +82,7 @@ export const useAuthStore = defineStore('auth', () => {
     return identityRequest
   }
   function restore() {
-    return initialized ? Promise.resolve() : refresh()
+    return identityRequest ?? (initialized ? Promise.resolve() : refresh())
   }
   async function logout() {
     if (authMode !== 'api') throw new Error('Logout API belum aktif pada prototype.')

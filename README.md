@@ -191,7 +191,7 @@ Jalankan development server:
 npm run dev
 ```
 
-Buka alamat terminal, biasanya `http://localhost:5173`. `vite.config.ts` tidak menetapkan port tetap atau proxy API; pastikan origin aktual diizinkan backend.
+Buka alamat terminal, biasanya `http://localhost:5173`. Vite meminta port 5173. Axios dan navigasi OAuth selalu memakai `VITE_API_BASE_URL`, termasuk saat development; proxy Vite tidak dipakai untuk menyambungkan sesi OAuth. Pastikan origin frontend aktual diizinkan backend.
 
 Build dan periksa hasilnya secara lokal:
 
@@ -212,6 +212,29 @@ Seluruh variabel pada [.env.example](.env.example):
 | `VITE_API_BASE_URL` | Origin HTTP(S) backend tanpa path, query, hash, atau kredensial. Jangan tambahkan `/api/v1`.  | `http://localhost:8000` |
 
 Variabel `VITE_*` masuk bundle browser: jangan menyimpan secret, API key OCR, atau kredensial email di sini. Restart Vite setelah perubahan; pada produksi, build ulang. `import.meta.env.BASE_URL` berasal dari konfigurasi base Vite, bukan variabel tambahan pada `.env.example`.
+
+Untuk Sanctum SPA Authentication, frontend dan API harus berbagi site. Kombinasi `http://localhost:5173` dan `https://api-staging.dokumenkita.online` tidak dapat memakai cookie staging `SameSite=Lax` untuk request Axios. `withCredentials` dan CORS credentials tidak melewati pembatasan cookie browser. Callback Google yang berhasil harus tetap diikuti `/api/v1/me` yang terautentikasi; respons 401 tetap mengarah ke login. Lihat [dokumentasi Sanctum](https://laravel.com/docs/13.x/sanctum#spa-authentication).
+
+Gunakan backend lokal dengan hostname/protokol yang sama untuk pengembangan lokal, atau layani frontend melalui subdomain staging HTTPS, misalnya `https://app-staging.dokumenkita.online`, dengan konfigurasi build:
+
+```env
+VITE_AUTH_MODE=api
+VITE_API_BASE_URL=https://api-staging.dokumenkita.online
+```
+
+Untuk contoh dua subdomain tersebut, konfigurasi backend yang perlu ditinjau oleh pengelola staging:
+
+```env
+FRONTEND_URL=https://app-staging.dokumenkita.online
+SANCTUM_STATEFUL_DOMAINS=app-staging.dokumenkita.online
+CORS_ALLOWED_ORIGINS=https://app-staging.dokumenkita.online
+SESSION_DOMAIN=.dokumenkita.online
+SESSION_COOKIE=dokumen-kita-staging-session
+SESSION_SECURE_COOKIE=true
+SESSION_SAME_SITE=lax
+```
+
+`SESSION_DOMAIN` bersama memungkinkan SPA membaca cookie `XSRF-TOKEN` untuk header CSRF Axios pada request perubahan data; cookie session tetap HttpOnly. Nama cookie session staging harus terpisah dari produksi. Domain cookie induk juga dibagikan ke subdomain lain, termasuk cookie CSRF, sehingga pastikan tidak berbenturan dengan aplikasi lain pada domain tersebut. CORS backend harus tetap mengaktifkan credentials dan mengizinkan origin secara eksplisit. Tambahkan port ke daftar stateful jika origin frontend memakainya. Contoh ini tidak mengubah konfigurasi staging secara otomatis; pastikan hosting HTTPS dan verifikasi `/api/v1/me`, refresh halaman, login biasa, register, verifikasi email, serta logout di domain tujuan sebelum menyatakan alur selesai.
 
 ## 10. Script npm
 

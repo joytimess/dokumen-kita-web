@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '../ui/BaseButton.vue'
 import FormField from '../ui/FormField.vue'
@@ -32,6 +32,11 @@ const errors = ref<FieldErrors>({})
 const message = ref('')
 const failed = ref(false)
 const busy = ref(false)
+function restoreAfterNavigation(event: PageTransitionEvent) {
+  if (event.persisted) busy.value = false
+}
+onMounted(() => window.addEventListener('pageshow', restoreAfterNavigation))
+onUnmounted(() => window.removeEventListener('pageshow', restoreAfterNavigation))
 const form = ref<HTMLFormElement>()
 const copy = computed(
   () =>
@@ -147,15 +152,16 @@ async function logout() {
     if (!auth.user) form.value?.querySelector<HTMLInputElement>('#email')?.focus()
   }
 }
-function google() {
+async function google() {
   if (busy.value || auth.restoring) return
   failed.value = false
   if (authMode === 'prototype') {
     message.value = 'Integrasi Google belum aktif pada prototype. Belum ada sesi masuk yang dibuat.'
     return
   }
+  busy.value = true
   try {
-    authApi.google(
+    await authApi.google(
       pendingInvitation()
         ? '/invitations/claim'
         : typeof route.query.redirect === 'string'
@@ -163,6 +169,7 @@ function google() {
           : undefined,
     )
   } catch {
+    busy.value = false
     failed.value = true
     message.value = 'Origin API belum dikonfigurasi dengan benar. Hubungi pengelola.'
   }

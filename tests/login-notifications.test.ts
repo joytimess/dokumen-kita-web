@@ -75,6 +75,7 @@ function bell() { return host.querySelector<HTMLButtonElement>('[aria-controls=w
 beforeEach(async () => {
   vi.useFakeTimers()
   vi.resetAllMocks()
+  window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
   vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:8000')
   sessionStorage.clear(); notify.dismiss()
   pinia = createPinia(); setActivePinia(pinia)
@@ -198,6 +199,21 @@ it('restores a previous session after a page refresh without a login summary', a
   expect(useAuthStore().user?.guid).toBe(user.guid)
   expect(useNotificationsStore().unreadCount).toBe(1)
   expect(notice.value).toBeNull()
+})
+
+it('locks the Google button immediately against double-click and restores it on browser back', async () => {
+  const pending = deferred<void>()
+  const google = vi.spyOn(authApi, 'google').mockReturnValue(pending.promise)
+  const button = host.querySelector<HTMLButtonElement>('.auth-google-button')!
+  button.click(); button.click(); await settle()
+  expect(google).toHaveBeenCalledTimes(1)
+  expect(button.disabled).toBe(true)
+  expect(host.querySelector<HTMLButtonElement>('button[type=submit]')!.disabled).toBe(true)
+  pending.resolve(); await settle()
+  expect(button.disabled).toBe(true)
+  window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+  await settle()
+  expect(button.disabled).toBe(false)
 })
 
 it('handles the real Google redirect entry once, strips its marker and never treats a replay as a new login', async () => {
