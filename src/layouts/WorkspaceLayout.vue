@@ -6,6 +6,7 @@ import BaseButton from '../components/ui/BaseButton.vue'
 import FeedbackMessage from '../components/ui/FeedbackMessage.vue'
 import WorkspaceHeader from '../components/workspace/WorkspaceHeader.vue'
 import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.vue'
+import SupportChatHost from '../components/support/SupportChatHost.vue'
 import { authMode } from '../services/http'
 import { t } from '../services/workspace-language'
 
@@ -111,6 +112,7 @@ onUnmounted(() => document.removeEventListener('keydown', keydown))
           </main>
         </div>
       </div>
+      <SupportChatHost :blocked="mobileOpen" />
     </template>
   </div>
 </template>

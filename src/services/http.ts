@@ -3,7 +3,9 @@ export const authMode = import.meta.env.VITE_AUTH_MODE === 'api' ? 'api' : 'prot
 export function apiOrigin(): string {
   const value = import.meta.env.VITE_API_BASE_URL
   if (!value) throw new Error('Origin API belum dikonfigurasi.')
+
   const url = new URL(value)
+
   if (
     !['http:', 'https:'].includes(url.protocol) ||
     url.pathname !== '/' ||
@@ -13,7 +15,10 @@ export function apiOrigin(): string {
     url.password
   )
     throw new Error('API harus berupa origin HTTP(S) tanpa path atau kredensial.')
-  return url.origin
+
+  // Development: request melalui Vite proxy
+  // Build: request langsung ke backend
+  return import.meta.env.DEV ? window.location.origin : url.origin
 }
 export const http = axios.create({
   withCredentials: true,
