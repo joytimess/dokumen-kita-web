@@ -11,7 +11,7 @@ import type { DocumentRecord, Page } from '../src/types/documents'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(), count: vi.fn(), create: vi.fn(), setVisibility: vi.fn(),
-  pdf: vi.fn(), bulkAssignCategory: vi.fn(), assignCategory: vi.fn(), categories: vi.fn(),
+  downloadPdf: vi.fn(), bulkAssignCategory: vi.fn(), assignCategory: vi.fn(), categories: vi.fn(),
 }))
 const feedback = vi.hoisted(() => ({
   confirmAction: vi.fn(), notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
@@ -130,7 +130,7 @@ beforeEach(() => {
   api.categories.mockResolvedValue([category])
   api.create.mockResolvedValue({ guid: 'new-document' })
   api.setVisibility.mockImplementation(async (guid, hidden) => { documents.find((item) => item.guid === guid)!.is_hidden = hidden })
-  api.pdf.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), hash: 'pdf' })
+  api.downloadPdf.mockResolvedValue({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }), contentDisposition: 'attachment; filename="Alpha-completed-2026-10-26.pdf"' })
   api.bulkAssignCategory.mockResolvedValue({ updated_count: 1, category_guid: category.guid })
   feedback.confirmAction.mockResolvedValue(true)
   if (!HTMLElement.prototype.showPopover) HTMLElement.prototype.showPopover = function () {}
@@ -385,13 +385,34 @@ describe('dashboard workspace', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     host.querySelector<HTMLButtonElement>('[aria-label="Buka tindakan dokumen Alpha"]')!.click(); await settle()
     button('Unduh PDF').click(); await settle()
-    expect(api.pdf).toHaveBeenCalledWith('version-alpha')
+    expect(api.downloadPdf).toHaveBeenCalledWith('version-alpha')
     expect(pdfUrl).toHaveBeenCalled()
     const checkbox = host.querySelector<HTMLInputElement>('[aria-label="Pilih dokumen Zeta"]')!
     checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })); await settle()
     await select('Tetapkan kategori', 'Perjanjian')
     button('Terapkan').click(); await settle()
     expect(api.bulkAssignCategory).toHaveBeenCalledWith(['zeta'], category.guid)
+  })
+
+  it.each([
+    ['attachment; filename="Alpha-completed-2026-10-26.pdf"', 'Alpha-completed-2026-10-26.pdf'],
+    ["attachment; filename=Alpha.pdf; filename*=UTF-8''Persetujuan-%E6%9D%B1%E4%BA%AC.pdf", 'Persetujuan-東京.pdf'],
+    ['', 'dokumen.pdf'],
+    ['attachment; filename="../../private.pdf"', 'dokumen.pdf'],
+  ])('downloads the backend Blob with a safe filename on the Documents route: %s', async (contentDisposition, filename) => {
+    const blob = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
+    api.downloadPdf.mockResolvedValue({ data: blob, contentDisposition })
+    const objectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:download')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await mount('/documents?status=completed')
+    host.querySelector<HTMLButtonElement>('[aria-label="Buka tindakan dokumen Alpha"]')!.click(); await settle()
+    button('Unduh PDF').click(); await settle()
+    expect(api.downloadPdf).toHaveBeenCalledExactlyOnceWith('version-alpha')
+    expect(objectUrl).toHaveBeenCalledExactlyOnceWith(blob)
+    expect(click.mock.contexts[0]).toMatchObject({ download: filename, href: 'blob:download' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:download')
   })
 
   it('closes the filter popover with Escape or an outside pointer, preserving selected values', async () => {

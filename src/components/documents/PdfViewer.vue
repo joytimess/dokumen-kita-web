@@ -4,6 +4,8 @@ import {
   getDocument,
   GlobalWorkerOptions,
   TextLayer,
+  version as pdfjsVersion,
+  build as pdfjsBuild,
   type PDFDocumentProxy,
   type RenderTask,
 } from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -12,6 +14,8 @@ import 'pdfjs-dist/web/pdf_viewer.css'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
 import { createReadGate } from '../../utils/readGate'
+import { pdfRenderDiagnostic, type PdfRenderStage } from '../../utils/pdfDiagnostics'
+import { readPdfTextContent } from '../../utils/pdfTextContent'
 import { findTextMatches, textMatchSnippet, visibleOcrMatches, type TextMatch } from '../../utils/pdfSearch'
 import type { DocumentOcrMatch, DocumentOcrStatus, Placeholder } from '../../types/documents'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
@@ -61,6 +65,7 @@ const ocrStatus = ref<DocumentOcrStatus | null>(null),
   ocrHits = ref<DocumentOcrMatch[]>([]),
   ocrError = ref('')
 const read = createReadGate()
+const diagnostic = ref('')
 let pdf: PDFDocumentProxy | undefined,
   task: ReturnType<typeof getDocument> | undefined,
   renderTask: RenderTask | undefined,
@@ -219,12 +224,15 @@ async function render() {
   observer?.disconnect()
   rendering.value = true
   error.value = ''
+  diagnostic.value = ''
   emit('gate', false)
+  let stage: PdfRenderStage = 'get-page'
   try {
     await previousRender?.promise.catch(() => {})
     if (serial !== renderGeneration || disposed) return
     const current = await pdf.getPage(page.value)
     if (serial !== renderGeneration || disposed) return
+    stage = 'viewport'
     const original = current.getViewport({ scale: 1 })
     const scale = fit.value ? available / original.width : zoom.value
     const viewport = current.getViewport({ scale })
@@ -235,10 +243,12 @@ async function render() {
       Math.sqrt(5_242_880 / (viewport.width * viewport.height)),
       4096 / viewport.width, 4096 / viewport.height)
     const target = canvas.value
+    stage = 'canvas-context'
     target.width = Math.floor(viewport.width * ratio)
     target.height = Math.floor(viewport.height * ratio)
     const context = target.getContext('2d')
     if (!context) throw new Error('PDF canvas context unavailable')
+    stage = 'canvas-render'
     renderTask = current.render({
       canvas: target,
       canvasContext: context,
@@ -247,8 +257,10 @@ async function render() {
     })
     await renderTask.promise
     if (serial !== renderGeneration || disposed) return
-    const text = await current.getTextContent()
+    stage = 'text-content'
+    const text = await readPdfTextContent(current)
     if (serial !== renderGeneration || disposed) return
+    stage = 'text-layer'
     textLayer.value!.replaceChildren()
     textLayer.value!.style.setProperty('--scale-factor', String(scale))
     textLayer.value!.style.setProperty('--total-scale-factor', String(scale))
@@ -256,12 +268,14 @@ async function render() {
     await textTask.render()
     if (serial !== renderGeneration || disposed) return
     noText.value = !text.items.some((item) => 'str' in item && item.str.trim())
+    stage = 'highlight'
     highlight()
     scrollToHit()
     read.recovered()
     read.visit(page.value)
     emit('gate', read.eligible.value)
     await nextTick()
+    stage = 'read-observer'
     observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting) && !rendering.value) read.end(page.value)
@@ -273,12 +287,16 @@ async function render() {
     if (
       serial !== renderGeneration ||
       disposed ||
-      (cause as Error).name === 'RenderingCancelledException'
+      (cause as Error | null)?.name === 'RenderingCancelledException'
     )
       return
     error.value = 'Halaman PDF belum dapat dimuat. Coba muat halaman lagi.'
     read.error()
     emit('failure')
+    diagnostic.value = pdfRenderDiagnostic(cause, stage, {
+      version: pdfjsVersion, build: pdfjsBuild, worker: workerUrl, viewer: import.meta.url,
+      canvasWidth: canvas.value?.width ?? 0, canvasHeight: canvas.value?.height ?? 0,
+    })
   } finally {
     if (serial === renderGeneration) rendering.value = false
   }
@@ -298,6 +316,7 @@ async function load() {
   emit('gate', false)
   busy.value = true
   error.value = ''
+  diagnostic.value = ''
   await task?.destroy()
   if (serial !== generation || disposed) return
   pdf = undefined
@@ -379,7 +398,7 @@ async function search() {
   try {
     for (let p = 1; p <= count.value; p++) {
       const target = await pdf.getPage(p)
-      const text = await target.getTextContent()
+      const text = await readPdfTextContent(target)
       if (serial !== searchGeneration || disposed) return
       const items = text.items.filter((item) => 'str' in item)
       const itemTexts = items.map((item) => item.str)
@@ -644,6 +663,10 @@ onBeforeUnmount(() => {
     >
       {{ t('Coba muat lagi') }}
     </button>
+    <details v-if="diagnostic" open class="mb-3 text-xs">
+      <summary>Diagnostik PDF (sementara)</summary>
+      <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all select-text">{{ diagnostic }}</pre>
+    </details>
     <p v-if="busy || rendering" class="mb-3 text-xs text-muted" role="status">
       {{ busy ? t('Memuat PDF…') : t('Merender halaman…') }}
     </p>

@@ -4,12 +4,12 @@ import { createApp, h, nextTick, type App } from 'vue'
 import PdfViewer from '../src/components/documents/PdfViewer.vue'
 
 const mocks = vi.hoisted(() => ({
-  pdf: vi.fn(), startOcr: vi.fn(), getDocument: vi.fn(), render: vi.fn(),
-  destroy: vi.fn(), cancel: vi.fn(), textRender: vi.fn(), textCancel: vi.fn(),
+  pdf: vi.fn(), startOcr: vi.fn(), ocr: vi.fn(), getDocument: vi.fn(), render: vi.fn(),
+  destroy: vi.fn(), cancel: vi.fn(), textRender: vi.fn(), textCancel: vi.fn(), streamTextContent: vi.fn(),
 }))
 vi.mock('../src/services/documents.service', () => ({ documentsApi: mocks }))
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  GlobalWorkerOptions: {}, getDocument: mocks.getDocument,
+  GlobalWorkerOptions: {}, getDocument: mocks.getDocument, version: '6.4.299', build: 'd0991a0d5',
   TextLayer: class {
     textDivs: HTMLElement[] = []
     render = mocks.textRender
@@ -29,6 +29,7 @@ function mount(editable = false) {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  window.history.replaceState({}, '', '/')
   containerWidth = 366; pageWidth = 595; pageHeight = 842
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => containerWidth)
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D)
@@ -43,13 +44,22 @@ beforeEach(() => {
   vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(3)
   mocks.pdf.mockResolvedValue({ data: new Uint8Array([1]), hash: 'a'.repeat(64) })
   mocks.startOcr.mockResolvedValue({ processing_status: 'unavailable', failed_pages: [] })
+  mocks.ocr.mockResolvedValue({ processing_status: 'unavailable', failed_pages: [], matches: [] })
   mocks.textRender.mockResolvedValue(undefined)
+  mocks.streamTextContent.mockImplementation(() => {
+    const stream = new ReadableStream({ start(controller) {
+      controller.enqueue({ items: [], styles: {}, lang: null })
+      controller.close()
+    } })
+    Object.defineProperty(stream, Symbol.asyncIterator, { value: undefined })
+    return stream
+  })
   mocks.render.mockImplementation(() => ({ promise: Promise.resolve(), cancel: mocks.cancel }))
   mocks.getDocument.mockReturnValue({
     destroy: mocks.destroy,
     promise: Promise.resolve({ numPages: 1, getPage: async () => ({
       getViewport: ({ scale }: { scale: number }) => ({ width: pageWidth * scale, height: pageHeight * scale }),
-      render: mocks.render, getTextContent: async () => ({ items: [] }),
+      render: mocks.render, streamTextContent: mocks.streamTextContent,
     }) }),
   })
 })
@@ -60,6 +70,51 @@ afterEach(() => {
 })
 
 describe('PDF viewer rendering lifecycle', () => {
+  it.each(['canvas-render', 'text-content', 'text-layer'] as const)('automatically shows the %s diagnostic without a query parameter and keeps signing blocked', async (stage) => {
+    const cause = new TypeError('private document text https://api.example/pdf?token=secret')
+    if (stage === 'canvas-render') mocks.render.mockReturnValueOnce({ promise: Promise.reject(cause), cancel: mocks.cancel })
+    if (stage === 'text-content') mocks.streamTextContent.mockReturnValueOnce(new ReadableStream({ start(controller) { controller.error(cause) } }))
+    if (stage === 'text-layer') mocks.textRender.mockRejectedValueOnce(cause)
+    mount(true); await settle()
+    const report = host.querySelector('details pre')!.textContent!
+    expect(host.querySelector('details pre')!.parentElement!.hasAttribute('open')).toBe(true)
+    expect(JSON.parse(report)).toMatchObject({ stage, error: 'TypeError' })
+    expect(report).not.toMatch(/private document|token|secret/)
+    expect(failures).toHaveBeenCalledTimes(1)
+    expect(gates.mock.calls.every(([eligible]) => !eligible)).toBe(true)
+    host.querySelector('canvas')!.click()
+    expect(placed).not.toHaveBeenCalled()
+    const retry = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Coba muat lagi'))!
+    retry.click(); await settle()
+    expect(host.querySelector('details pre')).toBeNull()
+    expect(host.querySelector('canvas')!.classList.contains('invisible')).toBe(false)
+  })
+  it('keeps diagnostics hidden when rendering succeeds', async () => {
+    mount(); await settle()
+    expect(host.querySelector('details pre')).toBeNull()
+    expect(failures).not.toHaveBeenCalled()
+  })
+  it('searches native text using the same reader path without stream async iteration', async () => {
+    mocks.streamTextContent.mockImplementation(() => {
+      const stream = new ReadableStream({ start(controller) {
+        controller.enqueue({ items: [{ str: 'Synthetic needle text' }], styles: {}, lang: 'en' })
+        controller.close()
+      } })
+      Object.defineProperty(stream, Symbol.asyncIterator, { value: undefined })
+      return stream
+    })
+    mount(); await settle()
+    const input = host.querySelector<HTMLInputElement>('#pdf-search')!
+    input.value = 'needle'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(mocks.streamTextContent).toHaveBeenCalledTimes(2)
+    expect(host.querySelector('ol')!.textContent).toContain('Synthetic needle text')
+    expect(host.textContent).not.toContain('Pencarian belum lengkap')
+    expect(failures).not.toHaveBeenCalled()
+  })
   it.each([360, 375, 390, 430, 1440])('fits a %ipx container and keeps bitmap resolution within budget', async (width) => {
     containerWidth = width
     mount(); await settle()

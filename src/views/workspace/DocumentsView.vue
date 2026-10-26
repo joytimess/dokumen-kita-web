@@ -8,6 +8,7 @@ import { workspaceError } from '../../services/workspace.errors'
 import { confirmAction, notify } from '../../services/feedback'
 import { useAuthStore } from '../../stores/auth'
 import { dateLabel } from '../../utils/documents'
+import { pdfDownloadFilename } from '../../utils/pdfDownload'
 import { categoryColorClass } from '../../utils/category'
 import type { DocumentCategory, DocumentRecord, Page } from '../../types/documents'
 import StatusBadge from '../../components/documents/StatusBadge.vue'
@@ -345,12 +346,12 @@ async function download(document: DocumentRecord) {
   downloading.value = document.guid
   actionError.value = ''
   try {
-    const { data } = await documentsApi.pdf(document.current_version.guid)
+    const { data, contentDisposition } = await documentsApi.downloadPdf(document.current_version.guid)
     if (!active || auth.user?.guid !== identity) return
-    const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
+    const url = URL.createObjectURL(data)
     const link = window.document.createElement('a')
     link.href = url
-    link.download = `${document.guid}.pdf`
+    link.download = pdfDownloadFilename(contentDisposition)
     link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   } catch (cause) {

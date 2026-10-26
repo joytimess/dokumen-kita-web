@@ -1,3 +1,4 @@
+import { AxiosHeaders } from 'axios'
 import { apiOrigin, authMode, csrf, http, mutation } from './http'
 import { getImage } from './image.service'
 import type {
@@ -170,6 +171,19 @@ export const documentsApi = {
   },
   async assetImage(guid: string, signal?: AbortSignal) {
     return getImage(`/api/v1/signature-assets/${guid}/image`, signal)
+  },
+  async downloadPdf(guid: string, signal?: AbortSignal) {
+    const response = await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${encodeURIComponent(guid)}/pdf`, {
+      params: { download: 1 },
+      responseType: 'blob',
+      signal,
+    })
+    return {
+      data: response.data,
+      contentDisposition: String((response.headers instanceof AxiosHeaders
+        ? response.headers.get('Content-Disposition')
+        : response.headers['content-disposition']) ?? ''),
+    }
   },
   async pdf(guid: string, signal?: AbortSignal) {
     const response = await http.get<ArrayBuffer>(`${apiOrigin()}/api/v1/versions/${guid}/pdf`, {
