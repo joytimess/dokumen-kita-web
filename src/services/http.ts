@@ -19,6 +19,8 @@ export function backendOrigin(): string {
   return url.origin
 }
 export function apiOrigin(): string {
+  if (import.meta.env.DEV && import.meta.env.MODE === 'development' &&
+    import.meta.env.VITE_DEV_API_PROXY === 'true') return ''
   return backendOrigin()
 }
 export const http = axios.create({

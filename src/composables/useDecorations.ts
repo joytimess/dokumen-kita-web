@@ -30,6 +30,7 @@ export function useDecorations(ctx: DecorationsContext) {
     footer: emptyDraft(),
   })
   const controllers: Partial<Record<DecorationKind, AbortController>> = {}
+  const selections: Record<DecorationKind, number> = { letterhead: 0, footer: 0 }
   const decorationSaving = ref(false)
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -70,6 +71,7 @@ export function useDecorations(ctx: DecorationsContext) {
   )
 
   function clearImage(kind: DecorationKind) {
+    selections[kind]++
     controllers[kind]?.abort()
     const url = decorations.value[kind].imageUrl
     if (url.startsWith('blob:')) URL.revokeObjectURL(url)
@@ -116,6 +118,7 @@ export function useDecorations(ctx: DecorationsContext) {
     const file = input.files?.[0]
     input.value = ''
     if (!file) return
+    const selection = ++selections[kind]
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2048 * 1024) {
       ctx.error.value = 'Pilih gambar PNG, JPEG, atau WebP maksimal 2 MB.'
       return
@@ -124,11 +127,13 @@ export function useDecorations(ctx: DecorationsContext) {
       const image = await createImageBitmap(file)
       const valid = image.width <= 1200 && image.height <= 400
       image.close()
+      if (!ctx.isActive() || selection !== selections[kind]) return
       if (!valid) {
         ctx.error.value = 'Gambar kop/footer maksimal 1200 × 400 piksel.'
         return
       }
     } catch {
+      if (!ctx.isActive() || selection !== selections[kind]) return
       ctx.error.value = 'Gambar tidak dapat dibaca.'
       return
     }

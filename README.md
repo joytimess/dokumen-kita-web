@@ -191,7 +191,7 @@ Jalankan development server:
 npm run dev
 ```
 
-Buka alamat terminal, biasanya `http://localhost:5173`. Vite meminta port 5173. Axios dan navigasi OAuth selalu memakai `VITE_API_BASE_URL`, termasuk saat development; proxy Vite tidak dipakai untuk menyambungkan sesi OAuth. Pastikan origin frontend aktual diizinkan backend.
+Buka alamat terminal, biasanya `http://localhost:5173`. Untuk API lokal, Axios memakai `VITE_API_BASE_URL` secara langsung. Untuk mengakses staging dari HTTP localhost, gunakan mode proxy development di bagian berikut. Navigasi OAuth tetap memakai origin backend.
 
 Build dan periksa hasilnya secara lokal:
 
@@ -210,31 +210,34 @@ Seluruh variabel pada [.env.example](.env.example):
 | ------------------- | --------------------------------------------------------------------------------------------- | ----------------------- |
 | `VITE_AUTH_MODE`    | Nilai `api` mengaktifkan backend; nilai lain menjadi `prototype`. Bawaan contoh: `prototype`. | `api`                   |
 | `VITE_API_BASE_URL` | Origin HTTP(S) backend tanpa path, query, hash, atau kredensial. Jangan tambahkan `/api/v1`.  | `http://localhost:8000` |
+| `VITE_DEV_API_PROXY` | `true` mengaktifkan proxy hanya pada `vite serve` mode `development`. Build dan preview tetap memakai API langsung. | `false` |
+| `VITE_DEV_PROXY_ORIGIN` | Origin frontend staging yang sudah dipercaya Sanctum; dipakai proxy setelah origin lokal divalidasi. | `https://staging.dokumenkita.online` |
 
 Variabel `VITE_*` masuk bundle browser: jangan menyimpan secret, API key OCR, atau kredensial email di sini. Restart Vite setelah perubahan; pada produksi, build ulang. `import.meta.env.BASE_URL` berasal dari konfigurasi base Vite, bukan variabel tambahan pada `.env.example`.
 
 Untuk Sanctum SPA Authentication, frontend dan API harus berbagi site. Kombinasi `http://localhost:5173` dan `https://api-staging.dokumenkita.online` tidak dapat memakai cookie staging `SameSite=Lax` untuk request Axios. `withCredentials` dan CORS credentials tidak melewati pembatasan cookie browser. Callback Google yang berhasil harus tetap diikuti `/api/v1/me` yang terautentikasi; respons 401 tetap mengarah ke login. Lihat [dokumentasi Sanctum](https://laravel.com/docs/13.x/sanctum#spa-authentication).
 
-Gunakan backend lokal dengan hostname/protokol yang sama untuk pengembangan lokal, atau layani frontend melalui subdomain staging HTTPS, misalnya `https://app-staging.dokumenkita.online`, dengan konfigurasi build:
+Untuk login email/password dari localhost ke staging, isi `.env.development.local` (diabaikan Git):
+
+```env
+VITE_AUTH_MODE=api
+VITE_API_BASE_URL=https://api-staging.dokumenkita.online
+VITE_DEV_API_PROXY=true
+VITE_DEV_PROXY_ORIGIN=https://staging.dokumenkita.online
+```
+
+Jalankan `npm run dev` pada `http://localhost:5173`. File ini hanya dimuat pada mode development; jangan memakai `--mode development` untuk build staging. Saat proxy aktif, seluruh service API, CSRF, dan gambar private memakai path relatif `/api/*` atau `/sanctum/*`. Proxy hanya mendengarkan localhost dan menolak Origin/Referer asing sebelum menggantinya dengan origin frontend staging yang sudah dipercaya. `Sec-Fetch-Site` dihapus dari request upstream agar Laravel 13 tetap memeriksa token CSRF, bukan mempercayai hop browser ke proxy sebagai same-origin. TLS upstream tetap diverifikasi.
+
+Hanya pada respons proxy lokal, atribut Domain dihapus agar cookie menjadi host-only localhost, Secure dilepas untuk HTTP, dan SameSite disetel Lax. Nilai cookie, HttpOnly, Path, serta masa berlaku dipertahankan. Session cookie tetap dikelola browser dan tidak dibaca JavaScript; Axios hanya membaca `XSRF-TOKEN` untuk `X-XSRF-TOKEN`. Stream gambar tidak diubah menjadi JSON atau teks.
+
+Build production/staging dan `npm run preview` tidak memasang proxy atau rewrite cookie. Keduanya menggunakan `VITE_API_BASE_URL` secara langsung. Untuk frontend staging HTTPS, gunakan konfigurasi build:
 
 ```env
 VITE_AUTH_MODE=api
 VITE_API_BASE_URL=https://api-staging.dokumenkita.online
 ```
 
-Untuk contoh dua subdomain tersebut, konfigurasi backend yang perlu ditinjau oleh pengelola staging:
-
-```env
-FRONTEND_URL=https://app-staging.dokumenkita.online
-SANCTUM_STATEFUL_DOMAINS=app-staging.dokumenkita.online
-CORS_ALLOWED_ORIGINS=https://app-staging.dokumenkita.online
-SESSION_DOMAIN=.dokumenkita.online
-SESSION_COOKIE=dokumen-kita-staging-session
-SESSION_SECURE_COOKIE=true
-SESSION_SAME_SITE=lax
-```
-
-`SESSION_DOMAIN` bersama memungkinkan SPA membaca cookie `XSRF-TOKEN` untuk header CSRF Axios pada request perubahan data; cookie session tetap HttpOnly. Nama cookie session staging harus terpisah dari produksi. Domain cookie induk juga dibagikan ke subdomain lain, termasuk cookie CSRF, sehingga pastikan tidak berbenturan dengan aplikasi lain pada domain tersebut. CORS backend harus tetap mengaktifkan credentials dan mengizinkan origin secara eksplisit. Tambahkan port ke daftar stateful jika origin frontend memakainya. Contoh ini tidak mengubah konfigurasi staging secara otomatis; pastikan hosting HTTPS dan verifikasi `/api/v1/me`, refresh halaman, login biasa, register, verifikasi email, serta logout di domain tujuan sebelum menyatakan alur selesai.
+**Batas OAuth Google:** navigasi tetap langsung ke `/api/v1/auth/google/redirect` pada backend staging. Callback Google yang terdaftar menuju backend tersebut, dan kode backend mengarahkan hasil login ke `FRONTEND_URL` staging. Cookie pada callback menjadi cookie domain staging, bukan localhost. Memulai OAuth melalui proxy lokal saja juga tidak menyelesaikannya karena callback dan cookie state tetap berada pada host yang berbeda. Gunakan frontend staging untuk Google OAuth; dukungan OAuth localhost memerlukan rancangan callback/session backend yang disetujui terpisah. Proxy ini tidak memindahkan session lewat URL, JavaScript, atau bearer token. Pengaturan backend, CORS, Sanctum, middleware, dan OAuth staging tidak diubah.
 
 ## 10. Script npm
 
@@ -257,7 +260,7 @@ Semua script berikut berasal dari `package.json`:
 
 ### Alamat dan service
 
-[http.ts](src/services/http.ts) memvalidasi origin, lalu service membentuk URL lengkap. Tidak ada `baseURL` Axios atau interceptor request/response global. Contoh origin `http://localhost:8000` menghasilkan endpoint aplikasi `http://localhost:8000/api/v1/...`; CSRF memakai `/sanctum/csrf-cookie`.
+[http.ts](src/services/http.ts) memakai origin backend yang tervalidasi untuk request langsung, atau origin kosong untuk path relatif saat proxy development aktif. `backendOrigin()` tetap mengembalikan backend untuk navigasi OAuth. Tidak ada `baseURL` Axios; interceptor yang ada hanya melacak request aktif untuk mencegah race navigasi OAuth dan tidak mengubah payload binary. Contoh origin `http://localhost:8000` menghasilkan endpoint langsung `http://localhost:8000/api/v1/...`; dalam mode proxy, endpoint menjadi `/api/v1/...` dan CSRF `/sanctum/csrf-cookie`.
 
 | Service                                                           | Cakupan endpoint                                                                                                |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |

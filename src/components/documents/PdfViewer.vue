@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   getDocument,
   GlobalWorkerOptions,
   TextLayer,
   type PDFDocumentProxy,
   type RenderTask,
-} from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+} from 'pdfjs-dist/legacy/build/pdf.mjs'
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import 'pdfjs-dist/web/pdf_viewer.css'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
@@ -209,6 +209,9 @@ async function refreshOcr(term: string, searchSerial: number, serial: number) {
 }
 async function render() {
   if (!pdf || !canvas.value || !textLayer.value || !scroller.value) return
+  const available = scroller.value.clientWidth - 24
+  if (available <= 0) return
+  lastResizeWidth = scroller.value.clientWidth
   const serial = ++renderGeneration
   const previousRender = renderTask
   previousRender?.cancel()
@@ -223,17 +226,19 @@ async function render() {
     const current = await pdf.getPage(page.value)
     if (serial !== renderGeneration || disposed) return
     const original = current.getViewport({ scale: 1 })
-    const scale = fit.value
-      ? Math.max(0.1, (scroller.value.clientWidth - 24) / original.width)
-      : zoom.value
+    const scale = fit.value ? available / original.width : zoom.value
     const viewport = current.getViewport({ scale })
     width.value = viewport.width
     height.value = viewport.height
-    const ratio = Math.min(window.devicePixelRatio || 1, 2)
+    // Bound bitmap memory and dimensions without changing CSS or signature coordinates.
+    const ratio = Math.min(window.devicePixelRatio || 1, 2,
+      Math.sqrt(5_242_880 / (viewport.width * viewport.height)),
+      4096 / viewport.width, 4096 / viewport.height)
     const target = canvas.value
     target.width = Math.floor(viewport.width * ratio)
     target.height = Math.floor(viewport.height * ratio)
-    const context = target.getContext('2d')!
+    const context = target.getContext('2d')
+    if (!context) throw new Error('PDF canvas context unavailable')
     renderTask = current.render({
       canvas: target,
       canvasContext: context,
@@ -288,11 +293,15 @@ async function load() {
   clearTimeout(searchTimer)
   renderTask?.cancel()
   textTask?.cancel()
+  observer?.disconnect()
+  read.reset()
+  emit('gate', false)
+  busy.value = true
+  error.value = ''
   await task?.destroy()
   if (serial !== generation || disposed) return
   pdf = undefined
   task = undefined
-  read.reset()
   page.value = 1
   count.value = 0
   hits.value = []
@@ -302,8 +311,6 @@ async function load() {
   ocrStart = undefined
   pdfHash = ''
   query.value = ''
-  error.value = ''
-  busy.value = true
   fetchController = new AbortController()
   try {
     const response = await documentsApi.pdf(props.versionGuid, fetchController.signal)
@@ -313,8 +320,9 @@ async function load() {
       throw new Error('HASH_CHANGED')
     const assets = `${import.meta.env.BASE_URL}pdfjs/`
     task = getDocument({ data: response.data, cMapUrl: `${assets}cmaps/`, cMapPacked: true, standardFontDataUrl: `${assets}standard_fonts/`, wasmUrl: `${assets}wasm/`, iccUrl: `${assets}iccs/` })
-    pdf = await task.promise
+    const loaded = await task.promise
     if (serial !== generation || disposed) return
+    pdf = loaded
     count.value = pdf.numPages
     read.reset(count.value)
     pdfHash = hash
@@ -445,6 +453,8 @@ async function retryOcr() {
 function place(event: MouseEvent) {
   if (
     !props.editable ||
+    busy.value ||
+    !!error.value ||
     rendering.value ||
     !sheet.value ||
     (event.target as HTMLElement).closest('[data-overlay]')
@@ -497,7 +507,7 @@ onMounted(() => {
   })
   if (scroller.value) resize.observe(scroller.value)
 })
-onUnmounted(() => {
+onBeforeUnmount(() => {
   disposed = true
   generation++
   renderGeneration++
@@ -512,6 +522,7 @@ onUnmounted(() => {
   renderTask?.cancel()
   textTask?.cancel()
   void task?.destroy()
+  if (canvas.value) canvas.value.width = canvas.value.height = 0
   pdf = undefined
 })
 </script>

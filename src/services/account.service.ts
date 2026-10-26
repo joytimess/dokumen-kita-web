@@ -1,4 +1,5 @@
 import { apiOrigin, authMode, csrf, http, mutation } from './http'
+import { getImage } from './image.service'
 import type { User } from '../types/auth'
 
 type UserResponse = { data: User }
@@ -18,7 +19,7 @@ export const accountApi = {
   },
   async photo() {
     if (authMode !== 'api') throw new Error('Workspace memerlukan mode API.')
-    return (await http.get<Blob>(`${apiOrigin()}/api/v1/me/photo`, { responseType: 'blob' })).data
+    return getImage('/api/v1/me/photo')
   },
   requestEmailChange: (email: string) =>
     mutation<{ data: { status: 'pending'; expires_in: number; resend_after: number } }>(

@@ -1,4 +1,5 @@
 import { apiOrigin, authMode, csrf, http, mutation } from './http'
+import { getImage } from './image.service'
 import type {
   Assignment,
   AuditEvent,
@@ -72,7 +73,7 @@ export const documentsApi = {
     return (await http.delete<{ data: DocumentVersion }>(`${apiOrigin()}/api/v1/versions/${guid}/decorations/${kind}`, { data: { editor_revision: revision } })).data.data
   },
   async decorationImage(guid: string, kind: 'letterhead' | 'footer', signal?: AbortSignal) {
-    return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${guid}/decorations/${kind}/image`, { responseType: 'blob', signal })).data
+    return getImage(`/api/v1/versions/${guid}/decorations/${kind}/image`, signal)
   },
   import: (guid: string, file: File, replace = false, revision?: number) => {
     const body = new FormData()
@@ -168,12 +169,7 @@ export const documentsApi = {
     await http.delete(`${apiOrigin()}/api/v1/signature-assets/${encodeURIComponent(guid)}`)
   },
   async assetImage(guid: string, signal?: AbortSignal) {
-    return (
-      await http.get<Blob>(`${apiOrigin()}/api/v1/signature-assets/${guid}/image`, {
-        responseType: 'blob',
-        signal,
-      })
-    ).data
+    return getImage(`/api/v1/signature-assets/${guid}/image`, signal)
   },
   async pdf(guid: string, signal?: AbortSignal) {
     const response = await http.get<ArrayBuffer>(`${apiOrigin()}/api/v1/versions/${guid}/pdf`, {
