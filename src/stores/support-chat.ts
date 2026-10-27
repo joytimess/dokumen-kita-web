@@ -27,6 +27,7 @@ export const useSupportChatStore = defineStore('support-chat', () => {
   let generation = 0
   let identity: string | undefined
   let failedMessage: ChatMessage | undefined
+  let context: string | undefined
 
   function persist() {
     if (!identity) return
@@ -71,6 +72,7 @@ export const useSupportChatStore = defineStore('support-chat', () => {
     error.value = null
     requestId.value = null
     failedMessage = undefined
+    context = undefined
     invitationDismissed.value = false
     receivedSuggestions.value = {}
     if (previous || next) {
@@ -97,6 +99,8 @@ export const useSupportChatStore = defineStore('support-chat', () => {
     if (!identity || loading.value || !message || message.length > 2000 || error.value?.kind === 'unauthenticated' || (error.value?.retryAt ?? 0) > Date.now()) return
     if (text !== undefined && !retrying && !draft.value.trim()) draft.value = text
     const submittedDraft = draft.value
+    const history = messages.value.filter((item) => item.id !== (failedMessage?.text === message ? failedMessage.id : undefined))
+      .slice(-6).map(({ role, text }) => ({ role, content: text.slice(0, 1000) })).filter(({ content }) => content.trim())
     const userMessage = failedMessage?.text === message ? failedMessage : append('user', message)
     failedMessage = undefined
     error.value = null
@@ -105,9 +109,16 @@ export const useSupportChatStore = defineStore('support-chat', () => {
     const locale = language.value
     controller = new AbortController()
     try {
-      const reply = await supportChatApi.send(message, locale, controller.signal)
+      const reply = history.length
+        ? await supportChatApi.send(message, locale, controller.signal, context, history)
+        : context
+          ? await supportChatApi.send(message, locale, controller.signal, context)
+          : await supportChatApi.send(message, locale, controller.signal)
       if (currentGeneration !== generation) return
-      append('assistant', reply.reply)
+      context = reply.context ?? undefined
+      const assistant = append('assistant', reply.reply)
+      assistant.references = reply.references
+      if (reply.show_references !== undefined) assistant.showReferences = reply.show_references
       receivedSuggestions.value[reply.locale] = reply.suggested_questions
       requestId.value = reply.requestId
       if (draft.value === submittedDraft && submittedDraft.trim() === message) draft.value = ''

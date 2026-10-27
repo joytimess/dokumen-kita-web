@@ -10,7 +10,7 @@ import { language, setWorkspaceActive } from '../src/services/workspace-language
 import { confirmation, finishConfirmation } from '../src/services/feedback'
 
 vi.mock('../src/services/http', () => ({ authMode: 'api' }))
-vi.mock('../src/services/support-chat.service', () => ({ supportChatApi: { send: vi.fn() } }))
+vi.mock('../src/services/support-chat.service', async (original) => ({ ...await original<typeof import('../src/services/support-chat.service')>(), supportChatApi: { send: vi.fn() } }))
 let app: App | undefined
 let host: HTMLDivElement
 let pinia: Pinia

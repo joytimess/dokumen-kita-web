@@ -19,6 +19,7 @@ const english: Record<string, string> = {
   'Bantuan penggunaan aplikasi': 'Help with using the application',
   'Ada yang bisa kami bantu?': 'How can we help?',
   'Tanyakan cara menggunakan Dokumen Kita. Tuliskan pertanyaan lengkap setiap kali agar jawaban sesuai.': 'Ask how to use Dokumen Kita. Write a complete question each time for a relevant answer.',
+  'Cari dokumen, periksa undangan dan progres tanda tangan, atau tanyakan cara menggunakan aplikasi.': 'Find documents, check invitations and signing progress, or ask how to use the application.',
   'Percakapan bantuan': 'Support conversation',
   'Anda': 'You',
   'Sedang menyiapkan jawaban…': 'Preparing an answer…',

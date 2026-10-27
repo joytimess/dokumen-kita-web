@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { t } from '../../services/workspace-language'
+import { RouterLink } from 'vue-router'
+import { chatReferencePath } from '../../services/support-chat.service'
 import type { SupportChatProps } from '../../types/support-chat'
 
 const props = defineProps<SupportChatProps>()
@@ -82,7 +84,7 @@ function keydown(event: KeyboardEvent) {
     return
   }
   if (event.key !== 'Tab' || !mobile.value) return
-  const elements = Array.from(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, [tabindex="0"]') ?? [])
+  const elements = Array.from(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], textarea, [tabindex="0"]') ?? [])
   const first = elements[0]
   const last = elements[elements.length - 1]
   if (!elements.includes(document.activeElement as HTMLElement)) { event.preventDefault(); first?.focus() }
@@ -151,19 +153,22 @@ onUnmounted(() => {
     <Transition name="support-chat">
       <section v-if="open" id="support-chat-panel" ref="panel" role="dialog" :aria-modal="mobile || undefined" aria-labelledby="support-chat-title" class="support-panel flex flex-col overflow-hidden border border-line bg-white shadow-xl" :class="{ 'support-panel-mobile': mobile }" :style="viewportStyle" @keydown="keydown">
         <header class="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3">
-          <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sage text-primary material-symbols-outlined" aria-hidden="true">support_agent</span>
+          <span class="support-header-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-sage text-primary" aria-hidden="true"><span class="material-symbols-outlined">support_agent</span></span>
           <div class="min-w-0 flex-1"><h2 id="support-chat-title" class="text-sm font-semibold">{{ t('Asisten Dokumen Kita') }}</h2><p class="mt-0.5 text-xs text-muted">{{ t('Bantuan penggunaan aplikasi') }}</p></div>
           <button type="button" class="support-icon" :aria-label="t('Tutup bantuan')" @click="emit('close')"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
         </header>
         <div ref="conversation" class="support-conversation min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
           <div v-if="!messages.length" class="mb-5 rounded-xl bg-soft p-4">
             <p class="text-sm font-semibold">{{ t('Ada yang bisa kami bantu?') }}</p>
-            <p class="mt-2 text-sm leading-6 text-muted">{{ t('Tanyakan cara menggunakan Dokumen Kita. Tuliskan pertanyaan lengkap setiap kali agar jawaban sesuai.') }}</p>
+            <p class="mt-2 text-sm leading-6 text-muted">{{ t('Cari dokumen, periksa undangan dan progres tanda tangan, atau tanyakan cara menggunakan aplikasi.') }}</p>
           </div>
           <div role="log" :aria-label="t('Percakapan bantuan')" aria-live="polite" aria-relevant="additions" class="space-y-4">
             <div v-for="message in messages" :key="message.id" class="flex flex-col" :class="message.role === 'user' ? 'items-end' : 'items-start'">
               <span class="mb-1 text-[11px] font-medium text-muted">{{ message.role === 'user' ? t('Anda') : t('Asisten Dokumen Kita') }}</span>
               <p class="support-message max-w-[90%] rounded-xl px-3 py-2.5 text-sm leading-6" :class="message.role === 'user' ? 'bg-primary text-white' : 'bg-soft text-ink'">{{ message.text }}</p>
+              <template v-if="message.role === 'assistant' && message.showReferences !== false">
+                <RouterLink v-for="reference in (message.references ?? []).filter(item => chatReferencePath(item))" :key="`${reference.type}:${reference.resource_id}`" :to="chatReferencePath(reference)!" class="mt-2 min-h-11 max-w-[90%] rounded-lg border border-line px-3 py-2 text-sm text-primary underline wrap-anywhere" @click="emit('close')">{{ reference.label }}</RouterLink>
+              </template>
             </div>
           </div>
           <p v-if="loading" role="status" class="mt-4 flex items-center gap-2 text-xs text-muted"><span class="size-3 animate-spin rounded-full border-2 border-line border-t-primary motion-reduce:animate-none" aria-hidden="true"></span>{{ t('Sedang menyiapkan jawaban…') }}</p>
@@ -171,7 +176,7 @@ onUnmounted(() => {
             <p class="leading-6">{{ errorText }}</p>
             <button v-if="error.kind !== 'unauthenticated'" type="button" class="mt-1 min-h-11 rounded-lg px-2 font-semibold underline underline-offset-2 disabled:opacity-50" :disabled="loading || waiting > 0" @click="emit('retry')">{{ t('Coba lagi') }}</button>
           </div>
-          <div v-if="suggestions.length" class="mt-5 flex flex-col items-start gap-2" :aria-label="t('Saran pertanyaan')">
+          <div v-if="suggestions.length && !messages.some(message => message.role === 'user')" class="mt-5 flex flex-col items-start gap-2" :aria-label="t('Saran pertanyaan')">
             <button v-for="question in suggestions" :key="question" type="button" class="min-h-11 max-w-full rounded-xl border border-line bg-white px-3 py-2 text-left text-xs leading-5 text-primary hover:bg-sage disabled:opacity-50 wrap-anywhere" :disabled="loading || waiting > 0 || error?.kind === 'unauthenticated'" @click="emit('send', question)">{{ question }}</button>
           </div>
         </div>
@@ -196,6 +201,7 @@ onUnmounted(() => {
 .support-panel { position: fixed; right: 1.25rem; bottom: 1.25rem; width: min(390px, calc(100vw - 2.5rem)); height: min(620px, calc(100dvh - 2.5rem)); border-radius: 1rem; }
 .support-icon { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
 .support-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.support-header-icon .material-symbols-outlined { line-height: 1; }
 .support-chat button:focus-visible, .support-chat textarea:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .support-chat-enter-active, .support-chat-leave-active { transition: opacity 160ms ease, transform 160ms ease; }
 .support-chat-enter-from, .support-chat-leave-to { opacity: 0; transform: translateY(8px); }

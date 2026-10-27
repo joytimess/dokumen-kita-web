@@ -42,6 +42,38 @@ it('submits the trimmed draft in the active language and displays only the real 
   expect(chat.error).toBeNull()
 })
 
+it('uses server context for follow-ups and clears it when the authenticated account changes', async () => {
+  const reference = { type: 'document', action: 'open_document', resource_id: '00000000-0000-4000-8000-000000000001', label: 'Kontrak' } as const
+  api.send.mockResolvedValueOnce({ ...reply, references: [reference], context: 'account-a-context', show_references: false })
+  const { chat, auth } = setup()
+  await chat.send('Cari kontrak')
+  expect(chat.messages.at(-1)?.references).toEqual([reference])
+  expect(chat.messages.at(-1)?.showReferences).toBe(false)
+  await chat.send('Yang tadi?')
+  expect(api.send).toHaveBeenLastCalledWith('Yang tadi?', 'id', expect.any(AbortSignal), 'account-a-context', [
+    { role: 'user', content: 'Cari kontrak' }, { role: 'assistant', content: reply.reply },
+  ])
+  auth.setUser({ ...user, guid: 'user-b' })
+  await chat.send('Yang tadi?')
+  expect(api.send).toHaveBeenLastCalledWith('Yang tadi?', 'id', expect.any(AbortSignal))
+  expect(sessionStorage.getItem(key)).not.toContain('account-a-context')
+})
+
+it('bounds conversation hints while excluding the current or retried message from history', async () => {
+  const { chat } = setup()
+  for (let i = 0; i < 5; i++) await chat.send(`Pertanyaan ${i}`)
+  chat.messages.at(-1)!.text = 'a'.repeat(1200)
+  api.send.mockRejectedValueOnce(new AxiosError('Network Error'))
+  await chat.send('Dia sudah tanda tangan?')
+  const originalHistory = api.send.mock.calls.at(-1)![4]
+  expect(originalHistory).toHaveLength(6)
+  expect(originalHistory.at(-1)).toEqual({ role: 'assistant', content: 'a'.repeat(1000) })
+  expect(originalHistory.some((item: { content: string }) => item.content === 'Dia sudah tanda tangan?')).toBe(false)
+  await chat.retry()
+  expect(api.send.mock.calls.at(-1)![4]).toEqual(originalHistory)
+  expect(chat.messages.filter((item) => item.text === 'Dia sudah tanda tangan?')).toHaveLength(1)
+})
+
 it.each(['', '  \n\t ', 'x'.repeat(2001)])('does not send empty or over-limit drafts', async (draft) => {
   const { chat } = setup(); chat.draft = draft
   await chat.send()
@@ -135,7 +167,9 @@ it('switches suggestions and requests with workspace locale without translating 
   expect(chat.messages.at(-1)?.text).toBe(reply.reply)
   api.send.mockResolvedValueOnce({ ...reply, locale: 'en', reply: 'English answer', suggested_questions: ['How to import?'] })
   await chat.send('How can I sign?')
-  expect(api.send).toHaveBeenLastCalledWith('How can I sign?', 'en', expect.any(AbortSignal))
+  expect(api.send).toHaveBeenLastCalledWith('How can I sign?', 'en', expect.any(AbortSignal), undefined, [
+    { role: 'user', content: 'Pertanyaan Indonesia' }, { role: 'assistant', content: reply.reply },
+  ])
   expect(chat.suggestions).toEqual(['How to import?'])
 })
 

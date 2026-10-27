@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, type App } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import SupportChatWidget from '../src/components/support/SupportChatWidget.vue'
 import { language, setWorkspaceActive } from '../src/services/workspace-language'
 import type { SupportChatProps } from '../src/types/support-chat'
@@ -15,12 +16,43 @@ async function mount(overrides: Partial<SupportChatProps> = {}) {
   props = reactive({ open: false, messages: [], draft: '', loading: false, error: null, suggestions: [], invitation: '', ...overrides })
   host = document.createElement('div'); document.body.append(host)
   app = createApp({ render: () => h(SupportChatWidget, { ...props, onOpen: () => { props.open = true }, onClose: () => { props.open = false }, 'onUpdate:draft': (value: string) => { props.draft = value }, onSend: emitted.send, onRetry: emitted.retry, 'onDismiss-invitation': emitted.dismiss }) })
-  app.mount(host); await settle()
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
+  await router.push('/')
+  app.use(router).mount(host); await settle()
 }
 function launcher() { return host.querySelector<HTMLButtonElement>('button[aria-controls=support-chat-panel]')! }
 function composer() { return host.querySelector<HTMLTextAreaElement>('#support-chat-draft')! }
 function submit() { host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }
 function key(keyValue: string, options: KeyboardEventInit = {}) { return new KeyboardEvent('keydown', { key: keyValue, bubbles: true, cancelable: true, ...options }) }
+
+it('hides starter suggestions after a user message and renders safe resource links as plain labels', async () => {
+  const guid = '00000000-0000-4000-8000-000000000001'
+  await mount({ open: true, suggestions: ['Cara impor?'], messages: [
+    { id: '1', role: 'user', text: 'Cari kontrak', createdAt: new Date().toISOString() },
+    { id: '2', role: 'assistant', text: 'Ditemukan', createdAt: new Date().toISOString(), references: [{ type: 'document', action: 'open_document', resource_id: guid, label: '<script>Kontrak</script>' }] },
+  ] })
+  expect(host.querySelector('[aria-label="Saran pertanyaan"]')).toBeNull()
+  expect(host.querySelector('a')?.getAttribute('href')).toBe(`/documents/${guid}`)
+  expect(host.querySelector('a')?.textContent).toBe('<script>Kontrak</script>')
+  expect(host.querySelector('script')).toBeNull()
+})
+
+it('keeps a direct answer as the only content when navigation is unnecessary and restores links for explicit navigation', async () => {
+  const guid = '00000000-0000-4000-8000-000000000001'
+  const answer = 'Email penerima tanda tangannya adalah signer@example.test.'
+  await mount({ open: true, messages: [{ id: 'answer', role: 'assistant', text: answer, createdAt: new Date().toISOString(), showReferences: false,
+    references: [{ type: 'document', action: 'open_document', resource_id: guid, label: 'Kontrak' }] }] })
+  expect(host.querySelectorAll('.support-message')).toHaveLength(1)
+  expect(host.querySelector('.support-message')?.textContent).toBe(answer)
+  expect(host.querySelector('a')).toBeNull()
+  expect(host.textContent).not.toContain('Kontrak')
+  props.messages[0]!.showReferences = true
+  await settle()
+  expect(host.querySelector('a')?.getAttribute('href')).toBe(`/documents/${guid}`)
+  props.messages[0]!.showReferences = undefined
+  await settle()
+  expect(host.querySelector('a')).not.toBeNull()
+})
 
 beforeEach(() => {
   mobile = false; language.value = 'id'; setWorkspaceActive(true)
