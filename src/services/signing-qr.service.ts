@@ -6,7 +6,7 @@ export const signingQrApi = {
     return (await http.get<{ data: SigningQrMetadata }>(`${apiOrigin()}/api/v1/versions/${version}/signing-qr`)).data.data
   },
   async image(version: string, download = false) {
-    return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${version}/signing-qr.svg${download ? '?download=1' : ''}`, { responseType: 'blob' })).data
+    return (await http.get<Blob>(`${apiOrigin()}/api/v1/versions/${version}/signing-qr${download ? '?download=1' : ''}`, { responseType: 'blob', headers: { Accept: 'image/svg+xml' } })).data
   },
   async resolve(token: string) {
     return (await mutation<{ data: SigningQrAccess }>('/api/v1/signing-qr/resolve', { token })).data
