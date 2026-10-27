@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { workspaceDestination } from '../../utils/authRedirect'
 import { pendingInvitation } from '../../utils/invitation'
+import { pendingSigningQr } from '../../utils/signingQr'
 import AuthLayout from '../../layouts/AuthLayout.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
@@ -14,7 +15,7 @@ const props = defineProps<{ result?: boolean }>()
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-const destination = computed(() => pendingInvitation() ? '/invitations/claim' : workspaceDestination(route.query.redirect))
+const destination = computed(() => pendingSigningQr() ? '/sign/qr' : pendingInvitation() ? '/invitations/claim' : workspaceDestination(route.query.redirect))
 const loading = ref(true)
 const confirmed = computed(
   () => !loading.value && !auth.sessionError && auth.user?.email_verified === true,

@@ -17,6 +17,7 @@ const feedback = vi.hoisted(() => ({ confirmAction: vi.fn(), notify: { error: vi
 vi.mock('../src/services/documents.service', () => ({ documentsApi: api }))
 vi.mock('../src/services/feedback', () => feedback)
 vi.mock('../src/components/documents/PdfViewer.vue', () => ({ default: { render: () => null } }))
+vi.mock('../src/components/documents/SigningQrPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('../src/components/signatures/SigningSession.vue', () => ({ default: {
   props: ['assignment'],
   render(this: { assignment: Assignment }) { return h('div', { 'data-testid': 'signing-session' }, this.assignment.guid) },

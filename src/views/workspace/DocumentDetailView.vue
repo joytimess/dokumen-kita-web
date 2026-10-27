@@ -12,6 +12,7 @@ import type { Assignment, AuditEvent, DocumentRecord, DocumentVersion, EmailNoti
 import StatusBadge from '../../components/documents/StatusBadge.vue'
 import BaseButton from '../../components/ui/BaseButton.vue'
 import FeedbackMessage from '../../components/ui/FeedbackMessage.vue'
+import SigningQrPanel from '../../components/documents/SigningQrPanel.vue'
 const route = useRoute(),
   auth = useAuthStore()
 const document = ref<DocumentRecord>(),
@@ -318,6 +319,7 @@ onUnmounted(() => {
         >+ {{ t('Tambah penerima') }}</RouterLink
       >
     </section>
+    <SigningQrPanel v-if="owner && document.current_version.published_at && document.current_version.status !== 'draft'" class="col-span-full" :version-guid="document.current_version.guid" :version-status="document.current_version.status" />
     <section class="detail-activity rounded-xl border border-line bg-white p-5 sm:p-8">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 class="text-xl font-semibold">{{ t('Aktivitas terbaru') }}</h2>

@@ -6,11 +6,17 @@ import { clearGoogleLoginSummary, consumeGoogleLoginSummary } from '../utils/goo
 import { authMode } from '../services/http'
 import { rememberInvitation, pendingInvitation, clearInvitation } from '../utils/invitation'
 import { afterAuthentication } from '../utils/authRedirect'
+import { rememberSigningQr, pendingSigningQr, clearSigningQr } from '../utils/signingQr'
 import { language, setWorkspaceActive, t } from '../services/workspace-language'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {
+      path: '/sign/qr/:token?',
+      component: () => import('../views/auth/QrSigningView.vue'),
+      meta: { title: 'QR Code Signing' },
+    },
     {
       path: '/',
       component: () => import('../views/LandingView.vue'),
@@ -125,6 +131,12 @@ const router = createRouter({
   },
 })
 router.beforeEach(async (to) => {
+  if (to.path.startsWith('/sign/qr/') && to.params.token !== undefined) {
+    const valid = rememberSigningQr(to.params.token)
+    if (!valid) clearSigningQr()
+    clearInvitation()
+    return { path: '/sign/qr', query: valid ? {} : { error: 'invalid' }, replace: true }
+  }
   const oauthReturn = authMode === 'api' && to.query.login_summary !== undefined
     ? { path: to.path, query: { ...to.query, login_summary: undefined }, hash: to.hash, replace: true }
     : undefined
@@ -138,6 +150,7 @@ router.beforeEach(async (to) => {
   const common = ['/login', '/register'].includes(to.path)
   const token = to.meta.invitation ? to.query.token : common ? to.query.invitation_token : undefined
   if (token !== undefined) {
+    clearSigningQr()
     const valid = rememberInvitation(token)
     if (!valid) clearInvitation()
     if (common)
@@ -164,7 +177,7 @@ router.beforeEach(async (to) => {
   if (auth.user && common)
     return afterAuthentication(
       auth.user.email_verified,
-      pendingInvitation() ? '/invitations/claim' : to.query.redirect,
+      pendingSigningQr() ? '/sign/qr' : pendingInvitation() ? '/invitations/claim' : to.query.redirect,
     )
   return oauthReturn
 })

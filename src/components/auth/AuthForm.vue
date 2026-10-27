@@ -14,6 +14,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useNotificationsStore } from '../../stores/notifications'
 import { afterAuthentication } from '../../utils/authRedirect'
 import { pendingInvitation } from '../../utils/invitation'
+import { pendingSigningQr } from '../../utils/signingQr'
 import { confirmAction, notify } from '../../services/feedback'
 import type { AuthKind, FieldErrors } from '../../types/auth'
 const props = defineProps<{ kind: AuthKind }>()
@@ -117,7 +118,7 @@ async function submit() {
       await router.push(
         afterAuthentication(
           auth.user!.email_verified,
-          pendingInvitation() ? '/invitations/claim' : route.query.redirect,
+          pendingSigningQr() ? '/sign/qr' : pendingInvitation() ? '/invitations/claim' : route.query.redirect,
         ),
       )
     }
@@ -162,7 +163,7 @@ async function google() {
   busy.value = true
   try {
     await authApi.google(
-      pendingInvitation()
+      pendingSigningQr() ? '/sign/qr' : pendingInvitation()
         ? '/invitations/claim'
         : typeof route.query.redirect === 'string'
           ? route.query.redirect
