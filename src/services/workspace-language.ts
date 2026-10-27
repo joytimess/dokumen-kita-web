@@ -8,6 +8,18 @@ const active = ref(false)
 export const languageName = computed(() => (language.value === 'en' ? 'English' : 'Indonesia'))
 
 const english: Record<string, string> = {
+  'Metode Penandatanganan': 'Signing Mode',
+  'Sequential (Berurutan)': 'Sequential (In Order)',
+  'Parallel (Bebas Urutan)': 'Parallel (Any Order)',
+  'Tanda tangan bebas urutan': 'Sign in any order',
+  'Tambahkan penerima undangan yang dapat menandatangani secara independen.': 'Add invitation recipients who can sign independently.',
+  'Semua penerima dapat menandatangani tanpa menunggu satu sama lain. Undangan dikirim kepada seluruh penerima setelah publish.': 'All recipients can sign without waiting for each other. Invitations are sent to all recipients after publishing.',
+  'Penerima :number': 'Recipient :number',
+  'Dapat menandatangani setelah publish': 'Can sign after publishing',
+  'Bebas urutan': 'Any order',
+  'Simpan perubahan penerima dan metode penandatanganan?': 'Save recipients and signing mode?',
+  'Tanda tangan Anda': 'Your signature',
+  ':signed dari :total penandatangan selesai': ':signed of :total signers have signed',
   'Butuh bantuan mengelola dokumen?': 'Need help managing documents?',
   'Bingung cara menandatangani dokumen?': 'Need help signing documents?',
   'Perlu bantuan mengatur profil?': 'Need help updating your profile?',

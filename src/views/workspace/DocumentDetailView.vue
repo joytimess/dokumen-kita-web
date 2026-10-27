@@ -221,6 +221,7 @@ onUnmounted(() => {
         {{ t('Versi :number', { number: formatNumber(document.current_version.version_number) }) }} ·
         {{ t('Diperbarui') }} {{ dateLabel(document.updated_at) }}
       </p>
+      <p class="mt-3 text-sm">{{ t('Metode Penandatanganan') }}: {{ t(document.current_version.signing_mode === 'parallel' ? 'Parallel (Bebas Urutan)' : 'Sequential (Berurutan)') }}</p>
       <p
         v-if="document.current_version.status === 'finalizing'"
         class="mt-5 text-sm leading-relaxed"
@@ -273,8 +274,14 @@ onUnmounted(() => {
     </section>
     <section class="detail-recipients rounded-xl border border-line bg-white p-5 sm:p-8">
       <h2 class="mb-5 text-xl font-semibold">
-        {{ owner ? t('Penerima dan progres') : t('Giliran Anda') }}
+        {{ owner ? t('Penerima dan progres') : t(document.current_version.signing_mode === 'parallel' ? 'Tanda tangan Anda' : 'Giliran Anda') }}
       </h2>
+      <p v-if="owner && document.current_version.signing_progress" class="mb-4 text-sm" role="status">
+        {{ t(':signed dari :total penandatangan selesai', {
+          signed: formatNumber(document.current_version.signing_progress.signed_count),
+          total: formatNumber(document.current_version.signing_progress.signer_count),
+        }) }}
+      </p>
       <p v-if="!document.current_version.assignments?.length" class="text-sm text-muted">
         {{ t('Belum ada penerima.') }}
       </p>
@@ -285,7 +292,7 @@ onUnmounted(() => {
       >
         <div class="min-w-0">
           <p class="text-sm font-semibold wrap-anywhere">
-            {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }}
+            <template v-if="document.current_version.signing_mode !== 'parallel'">{{ formatNumber(a.sequence_number) }}. </template>{{ a.recipient_email }}
           </p>
           <p v-if="a.signature" class="mt-2 text-xs text-muted">
             {{ t('Ditandatangani :date', { date: dateLabel(a.signature.signed_at) }) }}

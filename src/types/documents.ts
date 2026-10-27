@@ -29,6 +29,7 @@ export interface Assignment {
   read_confirmation?: { version_content_hash: string; confirmed_at: string } | null
   signature?: { guid: string; signed_at: string } | null
 }
+export type SigningMode = 'sequential' | 'parallel'
 export interface DocumentVersion {
   guid: string
   document_guid: string
@@ -36,6 +37,8 @@ export interface DocumentVersion {
   is_current?: boolean
   version_number: number
   status: string
+  signing_mode?: SigningMode
+  signing_progress?: { signed_count: number; signer_count: number }
   preview_status: 'none' | 'queued' | 'ready' | 'stale' | 'failed'
   preview_source?: 'editor' | 'upload' | null
   preview_error_code?: string | null

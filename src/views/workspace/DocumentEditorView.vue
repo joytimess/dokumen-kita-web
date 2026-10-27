@@ -74,6 +74,7 @@ const editable = computed(
     !!document.value &&
     document.value.owner_guid === identity &&
     document.value.current_version.status === 'draft' &&
+    !document.value.current_version.published_at &&
     document.value.current_version.is_current !== false &&
     !locked.value,
 )
@@ -794,6 +795,8 @@ onUnmounted(() => {
         v-if="stage === 1"
         :version-guid="document.current_version.guid"
         :assignments="document.current_version.assignments ?? []"
+        :signing-mode="document.current_version.signing_mode"
+        :readonly="!editable"
         :flush="flush"
         @dirty="extraDirty = $event"
         @saved="signersSaved"
@@ -806,6 +809,7 @@ onUnmounted(() => {
           :hash="document.current_version.content_hash!"
           :pages="document.current_version.preview_page_count!"
           :assignments="document.current_version.assignments"
+          :signing-mode="document.current_version.signing_mode"
           :flush="flush"
           @dirty="extraDirty = $event"
           @reviewed="reviewed = $event"
@@ -864,12 +868,13 @@ onUnmounted(() => {
               : formatNumber(document.current_version.preview_page_count ?? 0),
           }) }}
         </p>
+        <p class="mb-4 text-sm">{{ t('Metode Penandatanganan') }}: {{ t(document.current_version.signing_mode === 'parallel' ? 'Parallel (Bebas Urutan)' : 'Sequential (Berurutan)') }}</p>
         <div
           v-for="a in document.current_version.assignments"
           :key="a.guid"
           class="my-3 rounded border border-line p-3 text-sm wrap-anywhere"
         >
-          {{ formatNumber(a.sequence_number) }}. {{ a.recipient_email }} · {{ t(':count area', { count: formatNumber(a.placeholders?.length ?? 0) }) }}
+          <template v-if="document.current_version.signing_mode !== 'parallel'">{{ formatNumber(a.sequence_number) }}. </template>{{ a.recipient_email }} · {{ t(':count area', { count: formatNumber(a.placeholders?.length ?? 0) }) }}
         </div>
         <p v-if="!canPublish" class="my-5 text-sm text-muted">
           {{ t('Kirim tersedia setelah isi tersimpan, snapshot siap, semua penerima memiliki area valid yang tersimpan, dan posisi telah ditinjau pada tahap sebelumnya.') }}

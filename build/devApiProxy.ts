@@ -17,7 +17,8 @@ export function devApiProxy(target: string, frontendOrigin: string): Plugin {
   const proxy: ProxyOptions = {
     target,
     changeOrigin: true,
-    // Gunakan secure false kalo targeting local dev, secure true staging dan production
+    // Gunakan secure false kalo targeting local dev
+    // Gunakaan secure true staging dan production
     secure: false,
     configure(server) {
       server.on('proxyReq', (request) => {

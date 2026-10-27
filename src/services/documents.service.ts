@@ -15,6 +15,7 @@ import type {
   RevisionResult,
   DecorationPages,
   DocumentOcrStatus,
+  SigningMode,
 } from '../types/documents'
 
 async function get<T>(path: string, params?: Record<string, string | number>, signal?: AbortSignal) {
@@ -107,10 +108,11 @@ export const documentsApi = {
       responseType: 'blob', signal,
     })).data
   },
-  signers: (guid: string, emails: string[]) =>
+  signers: (guid: string, emails: string[], signingMode?: SigningMode) =>
     write<DocumentVersion>(
       `/versions/${guid}/signers`,
       {
+        ...(signingMode ? { signing_mode: signingMode } : {}),
         signers: emails.map((email, index) => ({
           email: email.trim().toLowerCase(),
           sequence_number: index + 1,

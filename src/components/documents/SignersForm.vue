@@ -1,35 +1,41 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { Assignment } from '../../types/documents'
+import type { Assignment, SigningMode } from '../../types/documents'
 import { validSigners } from '../../utils/documents'
 import { documentsApi } from '../../services/documents.service'
 import { useWorkspaceRequest } from '../../composables/useWorkspaceRequest'
 import BaseButton from '../ui/BaseButton.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
+import SelectControl from '../ui/SelectControl.vue'
 import { confirmAction, notify } from '../../services/feedback'
 import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{
   versionGuid: string
   assignments: Assignment[]
+  signingMode?: SigningMode
+  readonly?: boolean
   flush: () => Promise<boolean>
 }>()
 const emit = defineEmits<{ saved: [continueToNext: boolean]; dirty: [value: boolean] }>()
 const emails = ref<string[]>([])
+const mode = ref<SigningMode>('sequential')
 const baseline = ref('')
+const configuration = () => JSON.stringify({ emails: emails.value, mode: mode.value })
 const localError = ref('')
 const { busy, error, fields, run } = useWorkspaceRequest()
 watch(
-  () => props.assignments,
-  (value) => {
-    if (baseline.value && JSON.stringify(emails.value) !== baseline.value) return
+  () => [props.assignments, props.signingMode] as const,
+  ([value, signingMode]) => {
+    if (baseline.value && configuration() !== baseline.value) return
     emails.value = [...value]
       .sort((a, b) => a.sequence_number - b.sequence_number)
       .map((a) => a.recipient_email)
-    baseline.value = JSON.stringify(emails.value)
+    mode.value = signingMode ?? 'sequential'
+    baseline.value = configuration()
   },
   { immediate: true },
 )
-const dirty = computed(() => JSON.stringify(emails.value) !== baseline.value)
+const dirty = computed(() => configuration() !== baseline.value)
 watch(dirty, (value) => emit('dirty', value))
 async function remove(index: number) {
   const assignment = props.assignments.find((a) => a.recipient_email === emails.value[index])
@@ -45,6 +51,7 @@ async function remove(index: number) {
   emails.value.splice(index, 1)
 }
 function move(index: number, delta: number) {
+  if (mode.value === 'parallel' || props.readonly || busy.value) return
   const value = emails.value.splice(index, 1)[0]!
   emails.value.splice(index + delta, 0, value)
 }
@@ -54,6 +61,7 @@ function drop(index: number) {
   dragIndex.value = -1
 }
 async function save(continueToNext = false) {
+  if (props.readonly || busy.value) return
   localError.value = ''
   if (!validSigners(emails.value)) {
     localError.value = 'Gunakan email valid dan unik, maksimal 50 penerima.'
@@ -68,15 +76,15 @@ async function save(continueToNext = false) {
     !(await confirmAction(
       removed.length
         ? 'Perubahan email akan menghapus posisi penerima lama. Simpan perubahan?'
-        : 'Simpan perubahan penerima dan urutannya?',
+        : mode.value === 'parallel' ? 'Simpan perubahan penerima dan metode penandatanganan?' : 'Simpan perubahan penerima dan urutannya?',
       { title: 'Simpan penerima', action: 'Simpan', danger: !!removed.length },
     ))
   )
     return
   if (!(await props.flush())) return
-  const result = await run(() => documentsApi.signers(props.versionGuid, emails.value))
+  const result = await run(() => documentsApi.signers(props.versionGuid, emails.value, mode.value))
   if (result) {
-    baseline.value = JSON.stringify(emails.value)
+    baseline.value = configuration()
     emit('saved', continueToNext)
     notify.success('Penerima tersimpan.')
   }
@@ -84,6 +92,7 @@ async function save(continueToNext = false) {
 </script>
 <template>
   <section class="rounded-xl border border-line bg-white p-4 sm:p-6">
+    <fieldset class="min-w-0" :disabled="readonly || busy">
     <header class="flex items-start gap-3">
       <span class="material-symbols-outlined mt-0.5 text-xl text-primary" aria-hidden="true"
         >group</span
@@ -91,19 +100,29 @@ async function save(continueToNext = false) {
       <div>
         <h2 class="text-lg font-semibold">{{ t('Penerima tanda tangan') }}</h2>
         <p class="mt-1 text-sm leading-6 text-muted">
-          {{ t('Tambahkan penerima undangan dan tentukan urutan mereka menandatangani dokumen.') }}
+          {{ t(mode === 'parallel' ? 'Tambahkan penerima undangan yang dapat menandatangani secara independen.' : 'Tambahkan penerima undangan dan tentukan urutan mereka menandatangani dokumen.') }}
         </p>
       </div>
     </header>
+    <div class="mt-5 grid gap-2">
+      <label class="text-sm font-semibold">{{ t('Metode Penandatanganan') }}</label>
+      <p v-if="readonly" class="text-sm">{{ t(mode === 'parallel' ? 'Parallel (Bebas Urutan)' : 'Sequential (Berurutan)') }}</p>
+      <SelectControl v-else v-model="mode" :options="[
+        { value: 'sequential', label: t('Sequential (Berurutan)') },
+        { value: 'parallel', label: t('Parallel (Bebas Urutan)') },
+      ]" :ariaLabel="t('Metode Penandatanganan')" :disabled="busy" />
+    </div>
     <div class="mt-5 rounded-lg border border-line bg-soft p-4">
       <p class="flex items-center gap-2 text-sm font-semibold text-primary">
         <span class="material-symbols-outlined text-lg" aria-hidden="true">info</span>
-        {{ t('Tanda tangan berurutan') }}
+        {{ t(mode === 'parallel' ? 'Tanda tangan bebas urutan' : 'Tanda tangan berurutan') }}
       </p>
       <p class="mt-2 text-sm leading-6 text-muted">
         {{
           t(
-            'Undangan dikirim kepada penerima pertama. Penerima berikutnya baru mendapatkan undangan setelah giliran sebelumnya selesai.',
+            mode === 'parallel'
+              ? 'Semua penerima dapat menandatangani tanpa menunggu satu sama lain. Undangan dikirim kepada seluruh penerima setelah publish.'
+              : 'Undangan dikirim kepada penerima pertama. Penerima berikutnya baru mendapatkan undangan setelah giliran sebelumnya selesai.',
           )
         }}
       </p>
@@ -123,7 +142,7 @@ async function save(continueToNext = false) {
         <li v-for="(_, index) in emails" :key="index" class="min-w-0">
           <div
             class="rounded-xl border border-line bg-white p-4"
-            :draggable="!busy"
+            :draggable="!busy && !readonly && mode === 'sequential'"
             @dragstart="dragIndex = index"
             @dragover.prevent
             @drop.prevent="drop(index)"
@@ -139,7 +158,7 @@ async function save(continueToNext = false) {
                 <h4 class="text-sm font-semibold">
                   {{
                     t(
-                      index === 0
+                      mode === 'parallel' ? 'Penerima :number' : index === 0
                         ? 'Penerima pertama'
                         : index === 1
                           ? 'Penerima kedua'
@@ -150,7 +169,7 @@ async function save(continueToNext = false) {
                 </h4>
                 <p class="mt-1 text-xs leading-5 text-muted">
                   {{
-                    index === 0
+                    mode === 'parallel' ? t('Dapat menandatangani setelah publish') : index === 0
                       ? t('Menandatangani terlebih dahulu')
                       : t('Menandatangani setelah penerima :number', {
                           number: formatNumber(index),
@@ -160,7 +179,7 @@ async function save(continueToNext = false) {
               </div>
               <span
                 class="col-start-2 justify-self-start rounded-full bg-sage px-2.5 py-1 text-[11px] font-semibold text-primary sm:col-start-3 sm:row-start-1 sm:justify-self-end"
-                >{{ t(index === 0 ? 'Pertama' : 'Menunggu giliran') }}</span
+                >{{ t(mode === 'parallel' ? 'Bebas urutan' : index === 0 ? 'Pertama' : 'Menunggu giliran') }}</span
               >
             </div>
             <label class="mt-4 grid min-w-0 gap-2 text-xs font-medium"
@@ -181,7 +200,7 @@ async function save(continueToNext = false) {
                   :disabled="busy" /></span
             ></label>
             <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <p class="text-xs text-muted">
+              <p v-if="mode === 'sequential'" class="text-xs text-muted">
                 {{
                   index === 0
                     ? t('Urutan tidak dapat dinaikkan')
@@ -192,6 +211,7 @@ async function save(continueToNext = false) {
               </p>
               <div class="ml-auto flex gap-2">
                 <button
+                  v-if="mode === 'sequential'"
                   type="button"
                   class="grid size-11 place-items-center rounded-lg border border-line text-primary transition-colors hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transition-none"
                   :disabled="busy || index === 0"
@@ -202,6 +222,7 @@ async function save(continueToNext = false) {
                     >arrow_upward</span
                   ></button
                 ><button
+                  v-if="mode === 'sequential'"
                   type="button"
                   class="grid size-11 place-items-center rounded-lg border border-line text-primary transition-colors hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-30 motion-reduce:transition-none"
                   :disabled="busy || index === emails.length - 1"
@@ -224,7 +245,7 @@ async function save(continueToNext = false) {
             </div>
           </div>
           <div
-            v-if="index < emails.length - 1"
+            v-if="mode === 'sequential' && index < emails.length - 1"
             class="flex flex-col items-center gap-1 py-3 text-center text-xs text-muted"
             aria-hidden="true"
           >
@@ -282,5 +303,6 @@ async function save(continueToNext = false) {
         </BaseButton>
       </div>
     </footer>
+    </fieldset>
   </section>
 </template>

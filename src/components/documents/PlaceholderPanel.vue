@@ -3,7 +3,7 @@ import { computed, ref, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { documentsApi } from '../../services/documents.service'
 import { workspaceError } from '../../services/workspace.errors'
-import type { Assignment, Placeholder } from '../../types/documents'
+import type { Assignment, Placeholder, SigningMode } from '../../types/documents'
 import { roundPosition, validPlaceholder } from '../../utils/documents'
 import { recipientColor } from '../../utils/signaturePlacement'
 import PdfViewer from './PdfViewer.vue'
@@ -13,7 +13,7 @@ import SelectControl from '../ui/SelectControl.vue'
 import { confirmAction, notify } from '../../services/feedback'
 import { formatNumber, t } from '../../services/workspace-language'
 const props = defineProps<{
-  versionGuid: string; hash: string; pages: number; assignments: Assignment[]; flush: () => Promise<boolean>
+  versionGuid: string; hash: string; pages: number; assignments: Assignment[]; signingMode?: SigningMode; flush: () => Promise<boolean>
 }>()
 const emit = defineEmits<{
   saved: [assignments: Assignment[]]; dirty: [dirty: boolean]; reviewed: [reviewed: boolean]
@@ -123,6 +123,7 @@ async function updateRecipients(next: Assignment[], removed?: Assignment) {
   } finally { busy.value = false; if (active) emit('dirty', changed.value.size > 0) }
 }
 function reorder(index: number, delta: number) {
+  if (props.signingMode === 'parallel') return
   const next = [...recipients.value], [item] = next.splice(index,1)
   if (!item || index+delta < 0 || index+delta >= recipients.value.length) return
   next.splice(index+delta,0,item); void updateRecipients(next)
@@ -213,13 +214,13 @@ function pdfFailure() { pdfValid.value = false; reviewed.value = false; emit('re
               <li v-for="(recipient,index) in recipients" :key="recipient.guid" class="rounded-lg border p-3" :style="{borderColor:selected === recipient.guid ? recipientColor(index) : 'var(--color-line)'}">
                 <button type="button" class="flex w-full items-start gap-2 text-left disabled:opacity-50" :disabled="!canEdit" :aria-pressed="selected === recipient.guid" @click="chooseRecipient(recipient.guid)">
                   <span class="grid size-7 shrink-0 place-items-center rounded-full border text-xs font-semibold" :style="{color:recipientColor(index),borderColor:recipientColor(index)}">{{ formatNumber(recipient.sequence_number) }}</span>
-                  <span class="min-w-0 flex-1"><span class="block break-words text-sm font-semibold">{{ recipient.recipient_email }}</span><span class="mt-1 block text-xs text-muted">{{ t('Urutan :number', {number:recipient.sequence_number}) }} · {{ t(':count area', {count:rows[recipient.guid]?.length ?? 0}) }}</span></span>
+                  <span class="min-w-0 flex-1"><span class="block break-words text-sm font-semibold">{{ recipient.recipient_email }}</span><span class="mt-1 block text-xs text-muted"><template v-if="signingMode !== 'parallel'">{{ t('Urutan :number', {number:recipient.sequence_number}) }} · </template>{{ t(':count area', {count:rows[recipient.guid]?.length ?? 0}) }}</span></span>
                 </button>
                 <div class="mt-2 flex flex-wrap items-center justify-between gap-1">
                   <span class="text-xs text-muted" role="status">{{ t(statuses[recipient.guid] || (rows[recipient.guid]?.some(p => p.needs_review) ? 'Perlu ditinjau dan disimpan ulang' : 'Belum diubah')) }}</span>
                   <div class="ml-auto flex">
-                    <button type="button" class="placement-icon" :aria-label="t('Naikkan penerima :number', {number:index+1})" :disabled="busy || index===0" @click="reorder(index,-1)"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
-                    <button type="button" class="placement-icon" :aria-label="t('Turunkan penerima :number', {number:index+1})" :disabled="busy || index===recipients.length-1" @click="reorder(index,1)"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+                    <button v-if="signingMode !== 'parallel'" type="button" class="placement-icon" :aria-label="t('Naikkan penerima :number', {number:index+1})" :disabled="busy || index===0" @click="reorder(index,-1)"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+                    <button v-if="signingMode !== 'parallel'" type="button" class="placement-icon" :aria-label="t('Turunkan penerima :number', {number:index+1})" :disabled="busy || index===recipients.length-1" @click="reorder(index,1)"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
                     <button type="button" class="placement-icon text-error" :aria-label="t('Hapus penerima :number', {number:index+1})" :disabled="busy" @click="updateRecipients(recipients.filter(a => a.guid !== recipient.guid), recipient)"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
                   </div>
                 </div>
