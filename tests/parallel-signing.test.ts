@@ -17,7 +17,7 @@ const feedback = vi.hoisted(() => ({ confirmAction: vi.fn(), notify: { error: vi
 vi.mock('../src/services/documents.service', () => ({ documentsApi: api }))
 vi.mock('../src/services/feedback', () => feedback)
 vi.mock('../src/components/documents/PdfViewer.vue', () => ({ default: { render: () => null } }))
-vi.mock('../src/components/documents/SigningQrPanel.vue', () => ({ default: { render: () => null } }))
+vi.mock('../src/components/documents/SigningQrPanel.vue', () => ({ default: { render: () => h('section', { 'data-testid': 'qr-panel' }) } }))
 vi.mock('../src/components/signatures/SigningSession.vue', () => ({ default: {
   props: ['assignment'],
   render(this: { assignment: Assignment }) { return h('div', { 'data-testid': 'signing-session' }, this.assignment.guid) },
@@ -183,6 +183,49 @@ it('displays owner progress from backend counters rather than inferring it from 
   expect(host.textContent).toContain('Parallel (Bebas Urutan)')
   expect(host.textContent).toContain('2 dari 3 penandatangan selesai')
   expect(host.querySelector('[aria-label="Metode Penandatanganan"]')).toBeNull()
+})
+
+it('updates detail layout as QR availability changes across document lifecycles', async () => {
+  const record = {
+    guid: 'document', public_reference: 'DK-1', title: 'Perjanjian', status: 'draft', owner_guid: 'owner',
+    hidden_at: null, is_hidden: false, created_at: '2026-10-27T00:00:00Z', updated_at: '2026-10-27T00:00:00Z',
+    current_version: {
+      guid: 'version', document_guid: 'document', version_number: 1, status: 'draft', preview_status: 'ready',
+      signing_mode: 'parallel', assignments, updated_at: '2026-10-27T00:00:00Z', published_at: null,
+    },
+  } satisfies DocumentRecord
+  const page = { data: [], meta: { total: 0, current_page: 1, last_page: 1, per_page: 15 }, links: { prev: null, next: null } }
+  for (const method of [api.audit, api.versions, api.emails]) method.mockResolvedValue(page)
+  api.detail.mockResolvedValue(record)
+  const pinia = createPinia()
+  useAuthStore(pinia).user = { guid: 'owner', name: 'Owner', email: 'owner@example.test', email_verified: true }
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/documents/:documentGuid', component: DocumentDetailView },
+    { path: '/documents/:documentGuid/edit', component: { render: () => null } },
+    { path: '/documents/:documentGuid/versions/:versionGuid/view', component: { render: () => null } },
+  ] })
+  await router.push('/documents/document')
+  app = createApp({ render: () => h(DocumentDetailView) })
+  app.use(pinia).use(router).mount(host)
+  await settle()
+
+  for (const [status, publishedAt, hasQr] of [
+    ['draft', null, false], ['published', '2026-10-27T00:00:00Z', true],
+    ['in_progress', '2026-10-27T00:00:00Z', true], ['completed', '2026-10-27T00:00:00Z', true],
+    ['revision_requested', '2026-10-27T00:00:00Z', true], ['draft', null, false],
+  ] as const) {
+    api.detail.mockResolvedValue({ ...record, current_version: { ...record.current_version, status, published_at: publishedAt } })
+    button('Periksa status').click()
+    await settle()
+    expect(host.querySelector('.detail-grid')?.classList.contains('detail-grid-with-qr'), status).toBe(hasQr)
+    expect(!!host.querySelector('[data-testid="qr-panel"]'), status).toBe(hasQr)
+    expect(host.querySelector('.detail-grid')?.classList.contains('detail-grid-with-emails')).toBe(true)
+  }
+
+  useAuthStore(pinia).user = { guid: 'signer', name: 'Signer', email: 'b@example.test', email_verified: true }
+  await settle()
+  expect(host.querySelector('.detail-grid')?.classList.contains('detail-grid-with-emails')).toBe(false)
+  expect(host.querySelector('.detail-emails')).toBeNull()
 })
 
 it.each(['sequential', 'parallel', undefined] as const)('sends %s through the existing signers endpoint with stable sequence numbers', async (mode) => {

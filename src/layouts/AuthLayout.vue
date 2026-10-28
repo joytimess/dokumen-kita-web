@@ -3,19 +3,44 @@ import BrandLogo from '../components/brand/BrandLogo.vue'
 import AuthShowcase from '../components/auth/AuthShowcase.vue'
 import type { AuthKind } from '../types/auth'
 import '../styles/auth.css'
-defineProps<{ compact?: boolean; kind?: AuthKind }>()
+defineProps<{ compact?: boolean; kind?: AuthKind; formMotion?: string }>()
+function focusAuthContent(el: Element) {
+  const content = el.closest<HTMLElement>('.auth-form-content')
+  if (content && window.matchMedia('(prefers-reduced-motion: reduce)').matches) content.style.height = ''
+  if (content && !content.contains(document.activeElement)) content.focus({ preventScroll: true })
+}
+function leaveAuthContent(el: Element) {
+  const content = el.parentElement
+  if (content) content.style.height = `${content.offsetHeight}px`
+  ;(el as HTMLElement).inert = true
+}
+function enterAuthContent(el: Element) {
+  const content = el.parentElement
+  if (content && content.style.height) {
+    const height = (el as HTMLElement).offsetHeight
+    content.style.height = height === content.offsetHeight ? '' : `${height}px`
+  }
+}
+function finishAuthHeight(event: TransitionEvent) {
+  if (event.target === event.currentTarget && event.propertyName === 'height')
+    (event.currentTarget as HTMLElement).style.height = ''
+}
 </script>
 <template>
   <div v-if="kind" class="auth-redesign" :class="`auth-${kind}`">
-    <AuthShowcase :kind="kind" />
-    <section class="auth-form-panel">
-      <div class="auth-mobile-brand"><BrandLogo /></div>
+    <header class="auth-bar">
+      <BrandLogo />
       <RouterLink to="/" class="auth-back-link"
         ><span aria-hidden="true">←</span> Kembali ke beranda</RouterLink
       >
-      <main id="main" class="auth-form-content" tabindex="-1"><slot /></main>
+    </header>
+    <div class="auth-layout-grid">
+    <AuthShowcase />
+    <section class="auth-form-panel">
+      <main id="main" class="auth-form-content" tabindex="-1" @transitionend="finishAuthHeight"><Transition :name="formMotion" @before-leave="leaveAuthContent" @enter="enterAuthContent" @after-enter="focusAuthContent"><slot /></Transition></main>
       <p class="auth-form-footer">Dokumen rapi. Proses terarah.</p>
     </section>
+    </div>
   </div>
   <div v-else class="min-h-dvh sm:grid sm:grid-cols-[46%_54%]">
     <aside

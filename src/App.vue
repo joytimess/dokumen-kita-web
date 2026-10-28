@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import FeedbackMessage from './components/ui/FeedbackMessage.vue'
@@ -8,9 +8,22 @@ import InteractionHost from './components/ui/InteractionHost.vue'
 import { afterAuthentication } from './utils/authRedirect'
 import { pendingInvitation } from './utils/invitation'
 import { t } from './services/workspace-language'
+import AuthLayout from './layouts/AuthLayout.vue'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const authPaths = ['/login', '/register', '/forgot-password']
+const authPage = computed(() => authPaths.includes(route.path))
+const pageMotion = ref('page-none')
+const formMotion = ref('auth-swipe-left')
+watch(() => route.path, (to, from) => {
+  const fromIndex = authPaths.indexOf(from)
+  const toIndex = authPaths.indexOf(to)
+  const wasAuth = fromIndex !== -1
+  const isAuth = toIndex !== -1
+  if (wasAuth && isAuth) formMotion.value = toIndex > fromIndex ? 'auth-swipe-left' : 'auth-swipe-right'
+  else pageMotion.value = from === '/' && isAuth ? 'page-to-auth' : wasAuth && to === '/' ? 'page-to-landing' : 'page-none'
+}, { flush: 'sync' })
 const sessionBlocked = computed(
   () => auth.sessionError && ['/login', '/register'].includes(route.path),
 )
@@ -41,9 +54,14 @@ onMounted(() => {
     >
   </main>
   <RouterView v-else v-slot="{ Component }">
-    <div v-if="Component" class="flow-root min-h-dvh bg-white">
-      <component :is="Component" />
-    </div>
+    <Transition :name="pageMotion">
+      <AuthLayout v-if="Component && authPage" key="auth" kind="login" :form-motion="formMotion">
+        <component :is="Component" :key="route.path" />
+      </AuthLayout>
+      <div v-else-if="Component" :key="route.path" class="flow-root min-h-dvh bg-white">
+        <component :is="Component" />
+      </div>
+    </Transition>
   </RouterView>
   <InteractionHost />
 </template>

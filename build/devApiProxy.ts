@@ -19,7 +19,7 @@ export function devApiProxy(target: string, frontendOrigin: string): Plugin {
     changeOrigin: true,
     // Gunakan secure false kalo targeting local dev
     // Gunakaan secure true staging dan production
-    secure: true,
+    secure: false,
     configure(server) {
       server.on('proxyReq', (request) => {
         request.setHeader('Origin', upstreamOrigin)

@@ -153,16 +153,28 @@ it('previews protected SVG as an image, copies link, and revokes object URL', as
   app.mount(host); await settle()
   expect(qr.image).toHaveBeenCalledWith('version')
   expect(host.querySelector('img')?.src).toBe('blob:qr-preview')
+  expect(host.textContent).toContain('Siap digunakan')
+  expect(host.textContent).toContain('Aktif')
   const copy = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Salin'))!
   copy.click(); await settle()
   expect(writeText).toHaveBeenCalledWith(`https://frontend.test/sign/qr/${token}`)
   const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     expect(this.download).toBe('signing-qr-version.svg')
   })
-  const download = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Download'))!
+  const download = [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Unduh'))!
   download.click(); await settle()
   expect(qr.image).toHaveBeenLastCalledWith('version', true)
   expect(anchor).toHaveBeenCalledOnce()
   app.unmount(); app = undefined
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:qr-preview')
+})
+
+it.each(['revoked', 'completed', 'superseded', 'invalid'])('shows the actual %s status without active labels', async (status) => {
+  qr.metadata.mockResolvedValue({ status, signing_url: 'https://frontend.test/sign/qr/token', svg_url: '/unused' })
+  qr.image.mockResolvedValue(new Blob(['<svg/>'], { type: 'image/svg+xml' }))
+  app = createApp({ render: () => h(SigningQrPanel, { versionGuid: 'version', versionStatus: status }) })
+  app.mount(host); await settle()
+  expect(host.textContent).toContain(qrStatusLabel(status))
+  expect(host.textContent).not.toContain('Siap digunakan')
+  expect(host.textContent).not.toContain('Aktif')
 })

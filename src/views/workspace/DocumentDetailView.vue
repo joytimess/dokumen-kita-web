@@ -28,6 +28,7 @@ const document = ref<DocumentRecord>(),
   auditExpanded = ref(false)
 const { busy, error, run } = useWorkspaceRequest()
 const owner = computed(() => document.value?.owner_guid === auth.user?.guid)
+const showQr = computed(() => !!(owner.value && document.value?.current_version.published_at && document.value.current_version.status !== 'draft'))
 const recentAudit = computed(() =>
   auditExpanded.value ? audit.value?.data ?? [] : (audit.value?.data ?? []).slice(0, 3),
 )
@@ -211,7 +212,7 @@ onUnmounted(() => {
   <FeedbackMessage :message="t(error)" error /><FeedbackMessage :message="t(message)" />
   <p v-if="busy && !document" role="status" class="py-8 text-sm text-muted">{{ t('Memuat dokumen…') }}</p>
   <template v-if="document"
-    ><div :class="owner ? 'detail-grid' : 'detail-grid detail-grid--shared'">
+    ><div class="detail-grid" :class="{ 'detail-grid-with-qr': showQr, 'detail-grid-with-emails': owner }">
       <section class="detail-summary rounded-xl border border-line bg-white p-5 sm:p-8">
       <div class="mb-5 flex flex-wrap items-center gap-3">
         <h2 class="text-lg font-semibold">{{ t('Ringkasan dokumen') }}</h2>
@@ -273,11 +274,12 @@ onUnmounted(() => {
         >{{ t('Buka tautan undangan asli Anda untuk mengklaim giliran sendiri.') }}</RouterLink
       >
     </section>
+    <div class="detail-left">
     <section class="detail-recipients rounded-xl border border-line bg-white p-5 sm:p-8">
       <h2 class="mb-5 text-xl font-semibold">
         {{ owner ? t('Penerima dan progres') : t(document.current_version.signing_mode === 'parallel' ? 'Tanda tangan Anda' : 'Giliran Anda') }}
       </h2>
-      <p v-if="owner && document.current_version.signing_progress" class="mb-4 text-sm" role="status">
+      <p v-if="owner && document.current_version.signing_progress" class="mb-4 text-sm font-semibold text-primary" role="status">
         {{ t(':signed dari :total penandatangan selesai', {
           signed: formatNumber(document.current_version.signing_progress.signed_count),
           total: formatNumber(document.current_version.signing_progress.signer_count),
@@ -318,53 +320,6 @@ onUnmounted(() => {
         class="mt-2 inline-flex min-h-10 items-center text-sm font-medium text-primary underline"
         >+ {{ t('Tambah penerima') }}</RouterLink
       >
-    </section>
-    <SigningQrPanel v-if="owner && document.current_version.published_at && document.current_version.status !== 'draft'" class="col-span-full" :version-guid="document.current_version.guid" :version-status="document.current_version.status" />
-    <section class="detail-activity rounded-xl border border-line bg-white p-5 sm:p-8">
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 class="text-xl font-semibold">{{ t('Aktivitas terbaru') }}</h2>
-        <button
-          v-if="audit && (audit.data.length > 3 || audit.meta.last_page > 1)"
-          type="button"
-          class="min-h-10 text-sm text-primary underline"
-          @click="auditExpanded = !auditExpanded"
-          >{{ t(auditExpanded ? 'Lihat lebih sedikit' : 'Lihat semua') }}</button
-        >
-      </div>
-      <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">{{ t('Memuat aktivitas…') }}</p>
-      <FeedbackMessage :message="t(activityErrors.audit || '')" error />
-      <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">{{ t('Belum ada aktivitas.') }}</p>
-      <div v-for="event in recentAudit" :key="event.guid" class="flex gap-3 border-t border-line py-4">
-        <span class="material-symbols-outlined mt-0.5 text-lg text-primary" aria-hidden="true">{{ activityIcon(event.action) }}</span>
-        <div class="min-w-0">
-          <p class="text-sm font-semibold">{{ auditActionLabel(event.action) }}</p>
-          <p v-if="event.metadata?.reason" class="mt-1 text-sm text-ink">{{ t('Alasan') }}: {{ event.metadata.reason }}</p>
-          <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
-        </div>
-      </div>
-      <div v-if="auditExpanded && audit && audit.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
-        <span>{{ t('Halaman :current dari :last', { current: formatNumber(audit.meta.current_page), last: formatNumber(audit.meta.last_page) }) }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page >= audit.meta.last_page" @click="loadActivity('audit', audit.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
-      </div>
-    </section>
-    <section class="detail-versions rounded-xl border border-line bg-white p-5 sm:p-8">
-      <h2 class="mb-4 text-xl font-semibold">{{ t('Riwayat versi') }}</h2>
-      <p v-if="activityBusy.versions" role="status" class="text-sm text-muted">{{ t('Memuat versi…') }}</p>
-      <FeedbackMessage :message="t(activityErrors.versions || '')" error />
-      <p v-if="versions && !versions.data.length && !activityBusy.versions" class="text-sm text-muted">{{ t('Belum ada riwayat versi.') }}</p>
-      <div v-for="version in versions?.data" :key="version.guid" class="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3">
-        <div>
-          <p class="text-sm font-medium">{{ t('Versi :number · :status', { number: formatNumber(version.version_number), status: statusLabel(version.status) }) }}</p>
-          <p class="text-xs text-muted">{{ dateLabel(version.updated_at) }}</p>
-        </div>
-        <RouterLink :to="`/documents/${document.guid}/versions/${version.guid}/view`" class="min-h-11 inline-flex items-center text-sm text-primary underline">{{ t('Buka') }}</RouterLink>
-      </div>
-      <div v-if="versions && versions.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page <= 1" @click="loadActivity('versions', versions.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
-        <span>{{ t('Halaman :current dari :last', { current: formatNumber(versions.meta.current_page), last: formatNumber(versions.meta.last_page) }) }}</span>
-        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page >= versions.meta.last_page" @click="loadActivity('versions', versions.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
-      </div>
     </section>
     <section v-if="owner" class="detail-emails rounded-xl border border-line bg-white p-5 sm:p-8">
       <div class="mb-4">
@@ -414,6 +369,55 @@ onUnmounted(() => {
         </button>
       </nav>
     </section>
+    </div>
+    <SigningQrPanel v-if="showQr" class="detail-qr" :version-guid="document.current_version.guid" :version-status="document.current_version.status" />
+    <section class="detail-activity rounded-xl border border-line bg-white p-5 sm:p-8">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-xl font-semibold">{{ t('Aktivitas terbaru') }}</h2>
+        <button
+          v-if="audit && (audit.data.length > 3 || audit.meta.last_page > 1)"
+          type="button"
+          class="min-h-10 text-sm text-primary underline"
+          @click="auditExpanded = !auditExpanded"
+          >{{ t(auditExpanded ? 'Lihat lebih sedikit' : 'Lihat semua') }}</button
+        >
+      </div>
+      <p v-if="activityBusy.audit" role="status" class="text-sm text-muted">{{ t('Memuat aktivitas…') }}</p>
+      <FeedbackMessage :message="t(activityErrors.audit || '')" error />
+      <p v-if="audit && !audit.data.length && !activityBusy.audit" class="text-sm text-muted">{{ t('Belum ada aktivitas.') }}</p>
+      <div v-for="event in recentAudit" :key="event.guid" class="flex gap-3 border-t border-line py-4">
+        <span class="material-symbols-outlined mt-0.5 text-lg text-primary" aria-hidden="true">{{ activityIcon(event.action) }}</span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold">{{ auditActionLabel(event.action) }}</p>
+          <p v-if="event.metadata?.reason" class="mt-1 text-sm text-ink">{{ t('Alasan') }}: {{ event.metadata.reason }}</p>
+          <p class="mt-1 text-xs text-muted">{{ dateLabel(event.created_at) }}</p>
+        </div>
+      </div>
+      <div v-if="auditExpanded && audit && audit.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page <= 1" @click="loadActivity('audit', audit.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
+        <span>{{ t('Halaman :current dari :last', { current: formatNumber(audit.meta.current_page), last: formatNumber(audit.meta.last_page) }) }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.audit || audit.meta.current_page >= audit.meta.last_page" @click="loadActivity('audit', audit.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
+      </div>
+    </section>
+    <section class="detail-versions rounded-xl border border-line bg-white p-5 sm:p-8">
+      <h2 class="mb-4 text-xl font-semibold">{{ t('Riwayat versi') }}</h2>
+      <p v-if="activityBusy.versions" role="status" class="text-sm text-muted">{{ t('Memuat versi…') }}</p>
+      <FeedbackMessage :message="t(activityErrors.versions || '')" error />
+      <p v-if="versions && !versions.data.length && !activityBusy.versions" class="text-sm text-muted">{{ t('Belum ada riwayat versi.') }}</p>
+      <div v-for="version in versions?.data" :key="version.guid" class="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3">
+        <div>
+          <p class="text-sm font-medium">{{ t('Versi :number · :status', { number: formatNumber(version.version_number), status: statusLabel(version.status) }) }}</p>
+          <p class="text-xs text-muted">{{ dateLabel(version.updated_at) }}</p>
+        </div>
+        <RouterLink :to="`/documents/${document.guid}/versions/${version.guid}/view`" class="min-h-11 inline-flex items-center text-sm text-primary underline">{{ t('Buka') }}</RouterLink>
+      </div>
+      <div v-if="versions && versions.meta.last_page > 1" class="mt-4 flex items-center gap-3 text-sm">
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page <= 1" @click="loadActivity('versions', versions.meta.current_page - 1)">{{ t('Sebelumnya') }}</button>
+        <span>{{ t('Halaman :current dari :last', { current: formatNumber(versions.meta.current_page), last: formatNumber(versions.meta.last_page) }) }}</span>
+        <button class="min-h-11 text-primary underline disabled:opacity-40" :disabled="activityBusy.versions || versions.meta.current_page >= versions.meta.last_page" @click="loadActivity('versions', versions.meta.current_page + 1)">{{ t('Berikutnya') }}</button>
+      </div>
+    </section>
+
     </div></template
   >
 </template>
@@ -421,29 +425,30 @@ onUnmounted(() => {
 <style scoped>
 .detail-grid {
   display: grid;
-  gap: 1.5rem;
+  align-items: start;
+  gap: 1rem;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'summary' 'recipients' 'versions' 'emails' 'activity';
 }
 
-.detail-grid--shared {
-  grid-template-areas: 'summary' 'recipients' 'versions' 'activity';
-}
-
-.detail-summary { grid-area: summary; }
-.detail-recipients { grid-area: recipients; }
-.detail-activity { grid-area: activity; }
-.detail-versions { grid-area: versions; }
-.detail-emails { grid-area: emails; }
+.detail-left { display: contents; }
+.detail-qr { order: 1; }
+.detail-emails { order: 2; }
+.detail-activity { order: 3; }
+.detail-versions { order: 4; }
 
 @media (min-width: 1024px) {
   .detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas: 'summary recipients' 'versions emails' 'activity activity';
+    grid-template-areas: 'summary summary' 'left left' 'activity activity' 'versions versions';
   }
 
-  .detail-grid--shared {
-    grid-template-areas: 'summary recipients' 'versions activity';
-  }
+  .detail-grid-with-qr { grid-template-areas: 'summary summary' 'left qr' 'activity activity' 'versions versions'; }
+
+  .detail-summary { grid-area: summary; }
+  .detail-left { grid-area: left; display: grid; gap: 1rem; min-width: 0; }
+  .detail-grid-with-emails:not(.detail-grid-with-qr) .detail-left { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .detail-qr { grid-area: qr; }
+  .detail-activity { grid-area: activity; }
+  .detail-versions { grid-area: versions; }
 }
 </style>

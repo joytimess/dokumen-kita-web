@@ -8,6 +8,14 @@ const active = ref(false)
 export const languageName = computed(() => (language.value === 'en' ? 'English' : 'Indonesia'))
 
 const english: Record<string, string> = {
+  'Bagikan akses penandatanganan dokumen': 'Share access to sign the document',
+  'Aktif': 'Active',
+  'Scan untuk membuka tautan signing': 'Scan to open the signing link',
+  'Siap digunakan': 'Ready to use',
+  'Satu QR untuk seluruh penandatangan dalam versi ini. Login diperlukan untuk melanjutkan.': 'One QR for all signers on this version. Sign in to continue.',
+  'Masuk dengan email penerima yang terverifikasi.': 'Sign in with the recipient’s verified email address.',
+  'Salin tautan': 'Copy link',
+  'Unduh QR SVG': 'Download QR SVG',
   'Metode Penandatanganan': 'Signing Mode',
   'Sequential (Berurutan)': 'Sequential (In Order)',
   'Parallel (Bebas Urutan)': 'Parallel (Any Order)',

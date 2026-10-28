@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import BrandLogo from '../components/brand/BrandLogo.vue'
 import HeroSection from '../components/landing/HeroSection.vue'
+import DocumentPreview from '../components/landing/DocumentPreview.vue'
 import WorkflowDemo from '../components/landing/WorkflowDemo.vue'
 import FaqSection from '../components/landing/FaqSection.vue'
 import EmailVerificationActions from '../components/auth/EmailVerificationActions.vue'
@@ -102,9 +103,9 @@ onUnmounted(() => observer?.disconnect())
       </div>
 
       <section id="fitur" class="lp-shell lp-section">
-        <div class="lp-section-heading" data-reveal>
+        <div class="lp-section-heading lp-feature-heading" data-reveal>
           <p class="lp-eyebrow">LEBIH RAPI, LEBIH JELAS</p>
-          <h2>Ruang untuk dokumen.<br />Arah untuk prosesnya.</h2>
+          <h2>Ruang untuk dokumen.<br /><em>Arah untuk prosesnya.</em></h2>
           <p>Semua yang Anda butuhkan untuk satu kesepakatan.</p>
         </div>
         <div class="lp-bento">
@@ -125,6 +126,7 @@ onUnmounted(() => observer?.disconnect())
               ><span>Draft · Kontrak · Proposal</span
               ><span class="lp-file-plus" aria-hidden="true">+</span>
             </div>
+            <div class="lp-feature-document" aria-hidden="true"><DocumentPreview :stage="0" /></div>
           </article>
           <article class="lp-feature-card" data-reveal>
             <div class="lp-card-top">
