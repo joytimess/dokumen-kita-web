@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '../ui/BaseButton.vue'
 import FormField from '../ui/FormField.vue'
+import RecoveryOtpInput from './RecoveryOtpInput.vue'
 import PasswordField from '../ui/PasswordField.vue'
 import FeedbackMessage from '../ui/FeedbackMessage.vue'
 import { authMode } from '../../services/http'
@@ -77,7 +78,7 @@ onUnmounted(recovery.dispose)
       <template v-if="stage === 'otp'">
         <FeedbackMessage v-if="!otpRemaining && !otpConsumed" :message="expiredMessage" error />
         <FeedbackMessage v-if="otpConsumed && !message" message="Minta kode baru untuk melanjutkan. Kode sebelumnya sudah tidak dapat digunakan." error />
-        <FormField id="recovery-otp" v-model="fields.otp" label="Kode OTP" inputmode="numeric" autocomplete="one-time-code" :maxlength="6" :error="errors.otp" :disabled="busy || otpConsumed || !otpRemaining" hint="Kode berlaku selama 5 menit. Jangan bagikan kode kepada siapa pun." />
+        <RecoveryOtpInput v-model="fields.otp" :error="errors.otp" :disabled="busy || otpConsumed || !otpRemaining" />
         <p class="mb-3 text-xs text-muted">Masa berlaku kode: {{ formatTime(otpRemaining) }}</p>
       </template>
       <template v-if="stage === 'password'">
