@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
+import 'animate.css'
 import { documentsApi } from '../../services/documents.service'
 import { categoriesApi } from '../../services/categories.service'
 import { workspaceError } from '../../services/workspace.errors'
@@ -423,10 +424,11 @@ onUnmounted(() => {
   <section v-if="summary" :aria-label="t('Ringkasan dokumen')" class="mb-6">
     <div class="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 lg:grid-cols-4 sm:gap-4">
       <button
-        v-for="stat in stats"
+        v-for="(stat, index) in stats"
         :key="stat.status"
         type="button"
-        class="min-w-0 rounded-2xl border border-line bg-white p-4 text-left transition-colors hover:border-primary/50 hover:bg-soft/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:p-5"
+        class="animate__animated animate__fadeInUp min-w-0 rounded-2xl border border-line bg-white p-4 text-left transition-colors hover:border-primary/50 hover:bg-soft/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:p-5"
+        :style="{ animationDelay: `${index * 0.15}s` }"
         :class="status === stat.status && 'border-primary ring-1 ring-primary/20'"
         :aria-pressed="status === stat.status"
         @click="chooseStatus(stat.status)"
@@ -446,7 +448,54 @@ onUnmounted(() => {
     </div>
   </section>
 
-  <section class="min-w-0 rounded-2xl border border-line bg-white p-4 sm:p-6" :class="!summary && 'shadow-[0_2px_10px_rgba(20,28,48,0.035)]'">
+    <div v-if="!summary" class="mb-5 grid gap-3 sm:grid-cols-2 sm:items-end" :class="summary ? 'xl:grid-cols-5' : '[&_.select-control-value]:bg-transparent [&_.select-control-value]:p-0 [&_.select-control-trigger]:rounded-xl [&_.select-control-trigger]:px-3'">
+      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted" :class="!summary && 'sm:col-span-2'">
+        {{ t(summary ? 'Cari judul dokumen' : 'Cari dokumen') }}
+        <span class="relative flex min-w-0 gap-2">
+          <svg v-if="!summary" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg>
+          <input v-model="query" type="search" maxlength="200" class="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-white pr-3 text-sm text-ink" :class="summary ? 'pl-3' : 'pl-9'" :placeholder="t(summary ? 'Cari judul dokumen' : 'Cari judul dokumen...')" @input="queryChanged" />
+          <button v-if="query" type="button" class="min-h-11 shrink-0 rounded-xl border border-line px-3 text-sm text-primary" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
+        </span>
+      </label>
+      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
+        {{ t('Visibilitas') }}
+        <SelectControl v-model="visibility" :ariaLabel="t('Visibilitas')" class="min-h-11 w-full text-sm" :options="visibilityOptions" @change="filtersChanged" />
+      </label>
+      <div v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
+        {{ t('Status') }}
+        <SelectControl
+          v-model="status"
+          :ariaLabel="t('Status')"
+          class="min-h-11 text-sm"
+          :options="[
+            { value: '', label: t('Semua status') },
+            { value: 'draft', label: t('Draft') },
+            { value: 'in_progress', label: t('Dalam proses') },
+            { value: 'finalizing', label: t('Finalisasi') },
+            { value: 'completed', label: t('Selesai') },
+          ]"
+          @change="filtersChanged"
+        />
+      </div>
+      <div class="grid min-w-0 gap-2 text-xs font-medium text-muted">
+        {{ t('Kategori') }}
+        <SelectControl v-model="categoryFilter" :ariaLabel="t('Kategori')" class="min-h-11 w-full text-sm" :options="categoryFilterOptions" @change="filtersChanged" />
+      </div>
+      <div class="grid gap-2 text-xs font-medium text-muted">
+        {{ t(summary ? 'Urutkan' : 'Urutkan berdasarkan') }}
+        <SelectControl
+          v-model="sort"
+          :ariaLabel="t(summary ? 'Urutkan' : 'Urutkan berdasarkan')"
+          class="min-h-11 text-sm"
+          :options="[
+            { value: 'created', label: t('Terbaru dibuat') },
+            { value: 'title', label: t('Judul A–Z pada halaman ini') },
+          ]"
+        />
+      </div>
+    </div>
+
+  <section class="animate__animated animate__fadeInUp min-w-0 rounded-2xl border border-line bg-white p-4 sm:p-6" :class="!summary && 'shadow-[0_2px_10px_rgba(20,28,48,0.035)]'" :style="{ animationDelay: summary ? '0.45s' : '0.15s' }">
     <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
       <div>
         <h2 class="text-xl font-semibold">{{ summary ? t('Dokumen terbaru') : visibility === 'hidden' ? t('Dokumen disembunyikan') : t('Daftar dokumen') }}</h2>
@@ -501,52 +550,6 @@ onUnmounted(() => {
           ]" />
         </div>
         <button v-if="query" type="button" class="min-h-11 rounded-lg px-2 text-sm font-medium text-primary underline" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
-      </div>
-    </div>
-    <div v-else class="mb-5 grid gap-3 sm:grid-cols-2 sm:items-end" :class="summary ? 'xl:grid-cols-5' : '[&_.select-control-value]:bg-transparent [&_.select-control-value]:p-0 [&_.select-control-trigger]:rounded-xl [&_.select-control-trigger]:px-3'">
-      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted" :class="!summary && 'sm:col-span-2'">
-        {{ t(summary ? 'Cari judul dokumen' : 'Cari dokumen') }}
-        <span class="relative flex min-w-0 gap-2">
-          <svg v-if="!summary" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg>
-          <input v-model="query" type="search" maxlength="200" class="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-white pr-3 text-sm text-ink" :class="summary ? 'pl-3' : 'pl-9'" :placeholder="t(summary ? 'Cari judul dokumen' : 'Cari judul dokumen...')" @input="queryChanged" />
-          <button v-if="query" type="button" class="min-h-11 shrink-0 rounded-xl border border-line px-3 text-sm text-primary" :aria-label="t('Hapus pencarian')" @click="query = ''; queryChanged()">{{ t('Bersihkan') }}</button>
-        </span>
-      </label>
-      <label class="grid min-w-0 gap-2 text-xs font-medium text-muted">
-        {{ t('Visibilitas') }}
-        <SelectControl v-model="visibility" :ariaLabel="t('Visibilitas')" class="min-h-11 w-full text-sm" :options="visibilityOptions" @change="filtersChanged" />
-      </label>
-      <div v-if="!summary" class="grid gap-2 text-xs font-medium text-muted">
-        {{ t('Status') }}
-        <SelectControl
-          v-model="status"
-          :ariaLabel="t('Status')"
-          class="min-h-11 text-sm"
-          :options="[
-            { value: '', label: t('Semua status') },
-            { value: 'draft', label: t('Draft') },
-            { value: 'in_progress', label: t('Dalam proses') },
-            { value: 'finalizing', label: t('Finalisasi') },
-            { value: 'completed', label: t('Selesai') },
-          ]"
-          @change="filtersChanged"
-        />
-      </div>
-      <div class="grid min-w-0 gap-2 text-xs font-medium text-muted">
-        {{ t('Kategori') }}
-        <SelectControl v-model="categoryFilter" :ariaLabel="t('Kategori')" class="min-h-11 w-full text-sm" :options="categoryFilterOptions" @change="filtersChanged" />
-      </div>
-      <div class="grid gap-2 text-xs font-medium text-muted">
-        {{ t(summary ? 'Urutkan' : 'Urutkan berdasarkan') }}
-        <SelectControl
-          v-model="sort"
-          :ariaLabel="t(summary ? 'Urutkan' : 'Urutkan berdasarkan')"
-          class="min-h-11 text-sm"
-          :options="[
-            { value: 'created', label: t('Terbaru dibuat') },
-            { value: 'title', label: t('Judul A–Z pada halaman ini') },
-          ]"
-        />
       </div>
     </div>
     <p class="mb-4 text-xs text-muted">{{ t('Pencarian judul mencakup semua dokumen pada visibilitas yang dipilih. Urutan judul hanya berlaku pada halaman yang sedang dibuka.') }}</p>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import 'animate.css'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
@@ -215,7 +216,7 @@ onBeforeUnmount(() => {
     <p class="mt-2 text-sm text-muted">{{ t(query.trim() ? 'Coba ubah atau hapus pencarian kategori.' : 'Buat kategori pertama Anda. Dokumen tetap dapat disimpan tanpa kategori.') }}</p>
     <button v-if="!query.trim()" type="button" class="mt-5 min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white" @click="openCreate">{{ t('Buat kategori') }}</button>
   </section>
-  <section v-else-if="pageMatchesFilters" class="grid gap-3">
+  <section v-else-if="pageMatchesFilters" class="animate__animated animate__fadeInUp grid gap-3" style="animation-delay: 0.15s">
     <article v-for="category in categories" :key="category.guid" class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-line bg-white p-4 sm:gap-5 sm:p-5">
       <span class="grid size-16 shrink-0 place-items-center rounded-2xl sm:size-20" :class="categoryColorClass(category.color_token)">
         <span class="material-symbols-outlined text-4xl sm:text-5xl" aria-hidden="true">folder</span>
@@ -244,7 +245,7 @@ onBeforeUnmount(() => {
     </article>
   </section>
 
-  <nav v-if="page && pageMatchesFilters" class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" :aria-label="t('Halaman kategori')">
+  <nav v-if="page && pageMatchesFilters" class="animate__animated animate__fadeInUp mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm" style="animation-delay: 0.15s" :aria-label="t('Halaman kategori')">
     <div class="flex items-center gap-2 text-xs font-medium text-muted">
       {{ t('Tampilkan baris') }}
       <SelectControl v-model="perPage" :ariaLabel="t('Tampilkan baris')" class="h-9 text-sm" :options="[{ value: 10, label: '10' }, { value: 25, label: '25' }, { value: 50, label: '50' }]" />

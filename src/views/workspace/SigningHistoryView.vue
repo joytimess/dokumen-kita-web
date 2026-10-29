@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import 'animate.css'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
@@ -260,7 +261,7 @@ onUnmounted(() => {
 
   <section class="mb-5 grid gap-3 sm:grid-cols-3" :aria-label="t('Ringkasan riwayat')">
     <article
-      v-for="card in [
+      v-for="(card, index) in [
         {
           label: 'Total aktivitas',
           value: summary?.total,
@@ -281,7 +282,8 @@ onUnmounted(() => {
         },
       ]"
       :key="card.label"
-      class="rounded-xl border border-line bg-white p-4"
+      class="animate__animated animate__fadeInUp rounded-xl border border-line bg-white p-4"
+      :style="{ animationDelay: `${index * 0.15}s` }"
     >
       <p class="text-xs text-muted">{{ t(card.label) }}</p>
       <p
