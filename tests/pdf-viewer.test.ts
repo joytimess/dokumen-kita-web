@@ -20,11 +20,11 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
 let app: App | undefined, host: HTMLDivElement
 let containerWidth = 366, pageWidth = 595, pageHeight = 842
 let resizeCallback: () => void
-const gates = vi.fn(), failures = vi.fn(), placed = vi.fn()
+const gates = vi.fn(), failures = vi.fn(), placed = vi.fn(), progress = vi.fn()
 async function settle() { for (let i = 0; i < 20; i++) { await Promise.resolve(); await nextTick() } }
 function mount(editable = false) {
   host = document.createElement('div'); document.body.append(host)
-  app = createApp({ render: () => h(PdfViewer, { versionGuid: 'version', expectedHash: 'a'.repeat(64), editable, onGate: gates, onFailure: failures, onPlace: placed }) })
+  app = createApp({ render: () => h(PdfViewer, { versionGuid: 'version', expectedHash: 'a'.repeat(64), editable, onGate: gates, onFailure: failures, onPlace: placed, onProgress: progress }) })
   app.mount(host)
 }
 beforeEach(() => {
@@ -91,6 +91,8 @@ describe('PDF viewer rendering lifecycle', () => {
   })
   it('keeps diagnostics hidden when rendering succeeds', async () => {
     mount(); await settle()
+    expect(progress).toHaveBeenLastCalledWith(1, [1])
+    expect(gates).toHaveBeenLastCalledWith(false)
     expect(host.querySelector('details pre')).toBeNull()
     expect(failures).not.toHaveBeenCalled()
   })

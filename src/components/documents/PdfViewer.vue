@@ -33,6 +33,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   ready: [hash: string, count: number]
   gate: [eligible: boolean]
+  progress: [count: number, visited: number[]]
   failure: []
   place: [page: number, x: number, y: number]
   moved: [index: number, x: number, y: number]
@@ -118,6 +119,7 @@ const ocrStatusMessage = computed(() => {
   return t('Pencarian teks siap: :completed/:total halaman.', status.page_counts)
 })
 watch(read.eligible, (value) => emit('gate', value))
+watch([count, read.visited], () => emit('progress', count.value, [...read.visited.value]), { immediate: true })
 function highlight() {
   const divs = textTask?.textDivs ?? []
   const active = activeHit.value < hits.value.length ? hits.value[activeHit.value] : undefined

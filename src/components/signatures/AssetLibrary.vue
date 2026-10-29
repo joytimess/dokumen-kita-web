@@ -196,7 +196,7 @@ onUnmounted(() => {
       </div>
     </header>
     <div class="mb-5 border-b border-line pb-4">
-      <div class="flex flex-wrap gap-2" role="tablist" :aria-label="t('Sumber tanda tangan')">
+      <div class="flex w-full gap-2" role="tablist" :aria-label="t('Sumber tanda tangan')">
         <button
           v-for="(item, index) in methods"
           :key="item.id"
@@ -206,7 +206,7 @@ onUnmounted(() => {
           :aria-controls="`signature-panel-${item.id}`"
           :aria-selected="mode === item.id"
           :tabindex="mode === item.id ? 0 : -1"
-          class="min-h-11 flex-1 basis-36 rounded-lg border px-4 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+          class="min-h-11 w-1/3 min-w-0 rounded-lg border px-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
           :class="
             mode === item.id
               ? 'border-primary bg-primary text-white'
