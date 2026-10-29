@@ -31,7 +31,8 @@ const page = ref<Page<SignatureAsset>>(),
   preview = ref(''),
   source = ref<'drawn' | 'upload'>('upload'),
   message = ref(''),
-  submitting = ref(false)
+  submitting = ref(false),
+  canvasKey = ref(0)
 const { busy, error, fields, run } = useWorkspaceRequest()
 const tabs: HTMLButtonElement[] = []
 let active = true,
@@ -162,6 +163,7 @@ async function upload() {
   try {
     const result = await run(() => documentsApi.uploadAsset(selectedFile, selectedSource, request.signal))
     if (!result || !active) return
+    if (selectedSource === 'drawn') canvasKey.value++
     file.value = undefined
     URL.revokeObjectURL(preview.value)
     preview.value = ''
@@ -384,7 +386,7 @@ onUnmounted(() => {
         tabindex="0"
         class="min-w-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
-        <SignatureCanvas :active="mode === 'drawn'" :disabled="busy || submitting || disabled" :verifying="submitting && source === 'drawn'" @created="choose($event, 'drawn')" />
+        <SignatureCanvas :key="canvasKey" :active="mode === 'drawn'" :disabled="busy || submitting || disabled" :verifying="submitting && source === 'drawn'" @created="choose($event, 'drawn')" />
       </div>
       <div
         id="signature-panel-upload"

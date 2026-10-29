@@ -7,6 +7,12 @@ import BaseButton from '../ui/BaseButton.vue'
 const props = withDefaults(defineProps<{ active?: boolean; disabled?: boolean; verifying?: boolean }>(), { active: true })
 const emit = defineEmits<{ created: [file: File] }>()
 const canvas = ref<HTMLCanvasElement>()
+const colors = [
+  { name: 'Hitam', value: '#000000' },
+  { name: 'Biru Tinta', value: '#1D4ED8' },
+  { name: 'Biru Tua', value: '#17365D' },
+]
+const color = ref(colors[0]!.value)
 const ink = ref(false),
   error = ref('')
 let pad: SignaturePad | undefined
@@ -76,6 +82,14 @@ function endStroke() {
   resize()
 }
 
+function selectColor(value: string) {
+  if (!pad || drawing || props.disabled || props.verifying) return
+  color.value = value
+  pad.penColor = value
+  if (resizeSource) resizeSource.data = resizeSource.data.map((group) => ({ ...group, penColor: value }))
+  pad.fromData(pad.toData().map((group) => ({ ...group, penColor: value })))
+}
+
 async function clear() {
   if (props.disabled || props.verifying || !ink.value) return
   if (ink.value && !(await confirmAction('Hapus coretan tanda tangan ini?', {
@@ -132,7 +146,7 @@ function use() {
 watch(() => [props.active, props.disabled], syncEnabled, { flush: 'post' })
 onMounted(() => {
   pad = new SignaturePad(canvas.value!, {
-    minWidth: 1.5, maxWidth: 3, penColor: '#174C3C',
+    minWidth: 1.5, maxWidth: 3, penColor: color.value,
     velocityFilterWeight: 0.7, throttle: 16, minDistance: 2,
   })
   pad.addEventListener('beginStroke', beginStroke)
@@ -162,6 +176,23 @@ onUnmounted(() => {
       </div>
       <span class="rounded-full bg-soft px-3 py-1 text-xs font-medium text-primary">{{ t('Coretan langsung') }}</span>
     </header>
+    <fieldset class="mb-4" :disabled="disabled || verifying">
+      <legend class="mb-2 text-sm font-medium text-ink">{{ t('Warna tinta') }}</legend>
+      <div class="grid grid-cols-3 gap-2">
+        <button
+          v-for="option in colors"
+          :key="option.value"
+          type="button"
+          class="flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-lg px-2 text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40"
+          :class="color === option.value ? 'border-2 border-primary bg-primary/5 font-semibold' : 'border border-line'"
+          :aria-pressed="color === option.value"
+          @click="selectColor(option.value)"
+        >
+          <span class="h-4 w-4 shrink-0 rounded-full" :style="{ backgroundColor: option.value }" aria-hidden="true"></span>
+          <span>{{ t(option.name) }}</span>
+        </button>
+      </div>
+    </fieldset>
     <div class="overflow-hidden rounded-xl border border-line bg-white">
       <canvas
         ref="canvas"
