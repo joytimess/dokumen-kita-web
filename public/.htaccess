@@ -1,8 +1,20 @@
+Options -MultiViews
+DirectoryIndex index.html
+
 <IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteRule ^(api|sanctum)(/|$) - [L]
-  RewriteCond %{REQUEST_FILENAME} -f [OR]
-  RewriteCond %{REQUEST_FILENAME} -d
-  RewriteRule ^ - [L]
-  RewriteRule ^ index.html [L]
+    RewriteEngine On
+
+    # API Laravel dan Sanctum
+    RewriteRule ^(api|sanctum)(/|$) - [L]
+
+    # Asset statis tidak boleh diarahkan ke SPA
+    RewriteRule ^(assets|fonts|pdfjs)(/|$) - [L]
+
+    # Izinkan file dan folder yang tersedia
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Vue Router fallback untuk halaman aplikasi
+    RewriteRule ^ spa.html [L]
 </IfModule>

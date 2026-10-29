@@ -181,10 +181,23 @@ router.beforeEach(async (to) => {
     )
   return oauthReturn
 })
+const publicSeo = document.querySelector<HTMLTemplateElement>('#public-seo')?.content.cloneNode(true)
+  ?? (() => {
+    const fragment = document.createDocumentFragment()
+    document.querySelectorAll('link[rel="canonical"], meta[property^="og:"], meta[name^="twitter:"], script[type="application/ld+json"]').forEach((element) => {
+      element.setAttribute('data-public-seo', '')
+      fragment.append(element.cloneNode(true))
+    })
+    return fragment
+  })()
 function updateTitle(to = router.currentRoute.value) {
   const inWorkspace = Boolean(to.meta.workspace)
   setWorkspaceActive(inWorkspace)
-  document.title = `${t(String(to.meta.title ?? 'Dokumen Kita'))} · Dokumen Kita`
+  const landing = to.path === '/'
+  document.title = landing ? 'Dokumen Kita | Tanda Tangan dan Kelola Dokumen Online' : `${t(String(to.meta.title ?? 'Dokumen Kita'))} · Dokumen Kita`
+  document.querySelector('meta[name="robots"]')?.setAttribute('content', landing ? 'index, follow' : 'noindex, nofollow')
+  document.querySelectorAll('[data-public-seo]').forEach((element) => element.remove())
+  if (landing) document.head.append(publicSeo.cloneNode(true))
 }
 router.afterEach((to, _from, failure) => {
   updateTitle(to)

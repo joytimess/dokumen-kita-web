@@ -3,7 +3,7 @@ import BrandLogo from '../components/brand/BrandLogo.vue'
 import AuthShowcase from '../components/auth/AuthShowcase.vue'
 import type { AuthKind } from '../types/auth'
 import '../styles/auth.css'
-defineProps<{ compact?: boolean; kind?: AuthKind; formMotion?: string }>()
+defineProps<{ compact?: boolean; kind?: AuthKind | 'email-verification'; formMotion?: string }>()
 function focusAuthContent(el: Element) {
   const content = el.closest<HTMLElement>('.auth-form-content')
   if (content && window.matchMedia('(prefers-reduced-motion: reduce)').matches) content.style.height = ''

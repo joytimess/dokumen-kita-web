@@ -42,13 +42,17 @@ onUnmounted(() => {
 })
 </script>
 <template>
-  <div class="mt-4" aria-live="polite" aria-atomic="true">
+  <div class="auth-verification-feedback mt-4" aria-live="polite" aria-atomic="true">
     <FeedbackMessage :message="message" :error="failed" />
   </div>
-  <div v-if="auth.user && !auth.user.email_verified" class="flex flex-wrap gap-3">
+  <div
+    v-if="auth.user && !auth.user.email_verified"
+    class="auth-verification-actions flex flex-wrap gap-3"
+  >
     <BaseButton
       :loading="sending"
       :disabled="sending || remaining > 0"
+      class="auth-verification-primary"
       @click="verification.resend"
     >
       {{

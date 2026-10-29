@@ -8,11 +8,10 @@ defineProps<{ startRoute: string }>()
     <div class="lp-hero-copy">
       <p class="lp-eyebrow lp-hero-badge">DOKUMEN HIDUP, PROSES TERTATA</p>
       <h1 id="hero-title">
-        Dari draft sampai<br /><em>sepakat.</em><br />Dalam satu<br class="lp-desktop-break" />
-        tempat.
+        Tanda tangan dokumen online.<br /><em>Dari draft sampai sepakat.</em>
       </h1>
       <p class="lp-hero-description">
-        Siapkan dokumen, atur giliran tanda tangan, dan ikuti setiap langkahnya sampai kesepakatan.
+        Siapkan PDF atau DOCX, atur giliran tanda tangan, dan ikuti setiap langkahnya sampai kesepakatan.
         Semua orang tahu di mana prosesnya berada.
       </p>
       <div class="lp-hero-actions">
